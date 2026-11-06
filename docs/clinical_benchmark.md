@@ -15,6 +15,7 @@ source, so details should be confirmed against 0.0.5.
 ## Contents
 
 1. [Goals](#goals)
+   - [Clinical sub-tasks](#clinical-sub-tasks)
 2. [How models score today](#how-models-score-today)
 3. [Long proteins](#long-proteins)
 4. [Sparse scoring](#sparse-scoring)
@@ -30,12 +31,12 @@ source, so details should be confirmed against 0.0.5.
 
 - Score clinically observed missense variants with the existing zero-shot
   model zoo.
-- Evaluate against:
-  - **binary labels**: pathogenic / likely pathogenic vs benign / likely
-    benign (e.g. ClinVar);
-  - **summary statistics**: continuous per-variant values (e.g. biobank
-    effect sizes or odds ratios). The exact statistic is still to be decided,
-    see [Open questions](#open-questions).
+- Evaluate against three sub-tasks (see [Clinical sub-tasks](#clinical-sub-tasks)):
+  1. **ClinVar**: benign vs pathogenic classification;
+  2. **Biobank summary statistics** (BRaVa, Genebass): correlation of model
+     scores with association statistics;
+  3. **De novo variants**: separating de novos in severe developmental
+     disorder (SDD) cases from de novos in controls.
 - Follow proteingym-base standards (dataset archives, model cards, runner)
   so that every existing model runs unchanged.
 
@@ -45,6 +46,50 @@ Two properties of clinical data differ from DMS data:
   context of ESM-2-style models.
 - **Sparse variants.** Each gene usually has a handful to a few hundred
   labelled variants rather than a near-complete saturation scan.
+
+### Clinical sub-tasks
+
+| Sub-task | Label per variant | Metric | Evaluation unit | Main pitfalls |
+|---|---|---|---|---|
+| **ClinVar** | `1` pathogenic/likely pathogenic, `0` benign/likely benign | AUROC, AUPRC | Pooled across genes; per-gene only where both classes exist | Review-star / conflict filtering; circularity with models or features trained on ClinVar; gene-level confounding (pathogenic variants concentrate in some genes) |
+| **BRaVa / Genebass** | Continuous association statistic (e.g. beta, signed z or −log10 p) | Spearman (maybe Pearson, SE-weighted) | Pooled; per-gene where enough variants | Single-variant stats for rare missense are very noisy; gene-burden results are **gene-level**, not per-variant (see below); several phenotypes per variant |
+| **De novos: SDD vs controls** | `1` de novo in an SDD case, `0` de novo in a control | AUROC, AUPRC | Pooled across genes (most genes have few or one-sided DNMs) | Control de novos are not guaranteed benign; strong gene-level confounding (case DNMs concentrate in known DD genes, so a model can score well by recognising the gene rather than the variant) |
+
+Notes per sub-task:
+
+- **ClinVar**: report results stratified by review status, and consider a
+  within-gene evaluation (e.g. average per-gene AUROC over genes with both
+  classes) next to the pooled number, to separate variant-level from
+  gene-level discrimination.
+- **BRaVa / Genebass**: whether this is a per-variant target depends on which
+  results are used.
+  - *Single-variant association results* fit the per-protein archive
+    design: one continuous target per phenotype, or a chosen summary across
+    phenotypes.
+  - *Gene-level burden results* (one statistic per gene and mask) are not
+    per-variant labels. Evaluating them needs model scores aggregated per
+    gene (e.g. mean or fraction-damaging among the missense variants in the
+    mask), and the evaluation then compares across genes. This is a
+    different shape and would need its own aggregation step.
+  - Phenotype choice matters: either pick a curated set of phenotypes with
+    clear directions of effect, or treat each (phenotype, gene) as a separate
+    target and summarise.
+- **De novos (SDD vs controls)**: case de novos from SDD cohorts versus
+  de novos in unaffected controls. This is the same evaluation shape as
+  ClinVar (binary), but:
+  - the gene-level confounding is stronger, so report a within-gene or
+    gene-matched evaluation (e.g. restrict to genes with both case and
+    control DNMs, or compare against a gene-only baseline such as
+    constraint);
+  - recurrent DNMs collapse to one row (variants are keyed by sequence).
+    Keep the case/control counts as `non_targets`, and decide what to do
+    with variants seen in both cases and controls (drop or keep as case).
+
+**Gene universe and cost.** Genebass/BRaVa cover most protein-coding genes,
+which is far more than ClinVar or DNM gene sets. The union means thousands
+of archives, many of them long proteins, multiplied by every model. That
+makes the [long-protein](#long-proteins) work and scoring each protein once
+(see below) important rather than optional.
 
 ## How models score today
 
@@ -201,7 +246,13 @@ cross-validation folds. The benchmark pipelines currently consume
 
 ### A clinical dataset
 
-One archive per gene/protein. Example manifest:
+One archive per gene/protein holding **all clinical sub-tasks as separate
+targets** (ClinVar label, BRaVa/Genebass statistics, DNM case/control). A
+variant gets a row if it appears in any sub-task, and targets it has no
+label for are left blank. The protein is then scored once per model, and
+each sub-task is evaluated from the same predictions. The example below shows
+two targets; the full version adds e.g. `genebass_beta`, `brava_beta` and
+`dnm_case`. Example manifest:
 
 ```toml
 name = "BRCA1_HUMAN_clinical"
@@ -372,15 +423,15 @@ What must be shared is the per-protein inputs, so results are comparable:
 
 ## Open questions
 
-- **Which summary statistic?**
-  - Per-variant effect sizes or odds ratios from biobanks: continuous, noisy,
-    sparse per gene. Pooled Spearman is natural; maybe weight by standard
-    error. This fits the per-protein, two-target archive design above.
-  - Gene-level or burden statistics (one number per gene): not a per-variant
-    target. Model scores would need aggregating to gene level first, which is
-    a different evaluation shape that needs its own design.
-  - Allele frequency or constraint: a proxy for selection, but confounded by
-    mutation rate.
+- **BRaVa / Genebass: which statistics?** Single-variant association results
+  (per-variant target, fits the archive design) or gene-burden results
+  (gene-level, needs a separate aggregation and evaluation step)? Which
+  phenotypes, and which statistic (beta, signed z, −log10 p)?
+- **De novo cohorts**: which SDD case and control cohorts, how to handle
+  variants seen in both, and which gene-matched or within-gene evaluation to
+  report next to the pooled AUROC.
+- **Gene-level baselines**: include a gene-only baseline (e.g. constraint) so
+  that ClinVar and DNM results can be read as variant-level discrimination.
 - Which models must support long proteins for the clinical leaderboard, and
   how are missing predictions (model refused, variant outside MSA) counted?
 - Label curation: ClinVar review-star threshold, handling of conflicting
