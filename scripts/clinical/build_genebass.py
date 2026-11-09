@@ -231,10 +231,12 @@ def main():
         for s in st:
             shutil.copy(s["path"], d / s["path"].name)
         msa = None
-        if a.msa_dir:
+        if a.msa_dir and (a.msa_dir / f"{u}.a3m").exists():
             src = a.msa_dir / f"{u}.a3m"
             msa = dict(path=d / f"{u}_colabfold_uniref100.a3m", **a3m_check(src, wt))
             shutil.copy(src, msa["path"])
+        elif a.msa_dir:
+            print(f"WARNING no MSA for {u} in {a.msa_dir}: archive built without MSA", flush=True)
         prot[u] = dict(info, structures=st, msa=msa, sprot_identical=(info["sequence"] == wt), length=len(wt))
 
     # --- one archive per pair ------------------------------------------------------------------------------------
