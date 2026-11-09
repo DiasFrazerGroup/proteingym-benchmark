@@ -159,6 +159,10 @@ def toml_str(x):
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--fig6", type=Path, required=True)
+    ap.add_argument("--hits", type=Path, default=None,
+                    help="gene-phenotype table (default: paper top hits; genebass_api.py writes one from Genebass)")
+    ap.add_argument("--betas", type=Path, default=None,
+                    help="single-variant table (default: paper betas; genebass_api.py writes one from Genebass)")
     ap.add_argument("--sprot", type=Path, required=True)
     ap.add_argument("--afdb", type=Path, required=True)
     ap.add_argument("--out", type=Path, default=Path("datasets/clinical/genebass"))
@@ -172,8 +176,8 @@ def main():
         d.mkdir(parents=True)
 
     # --- raw tables ---------------------------------------------------------------------------------------------
-    hits = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits.csv")
-    bet = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits_all_variants_betas.csv.gz")
+    hits = pd.read_csv(a.hits or a.fig6 / "GeneBass_BiochemAssays_top_hits.csv")
+    bet = pd.read_csv(a.betas or a.fig6 / "GeneBass_BiochemAssays_top_hits_all_variants_betas.csv.gz")
     sc = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits_all_variants_scores.csv.gz",
                      usecols=["variant_id", "hgvsp", "Gene", "uniprot_id", "uniprot_mut", "Sequence"])
     sc = sc.rename(columns={"Gene": "gene"}).drop_duplicates(["variant_id", "hgvsp", "gene"])
@@ -201,11 +205,11 @@ def main():
     var["mapping"] = np.where(ok, "paper_uniprot", "")
     for g, rows in var[~ok].groupby("gene"):
         acc = gene2acc.get(g)
-        hit = map_by_offset(rows.hgvsp.tolist(), sp[acc]["sequence"]) if acc else None
+        ref = seq.get(acc, sp[acc]["sequence"]) if acc else None      # keep the paper wild type if it has one
+        hit = map_by_offset(rows.hgvsp.tolist(), ref) if acc else None
         assert hit, f"cannot map {g} ({len(rows)} rows) onto Swiss-Prot"
         o, muts = hit
-        seq.setdefault(acc, sp[acc]["sequence"])
-        assert seq[acc] == sp[acc]["sequence"]
+        seq.setdefault(acc, ref)
         var.loc[rows.index, ["uniprot_id", "uniprot_mut", "mapping"]] = [[acc, m, f"swissprot_offset{o:+d}"]
                                                                          for m in muts]
         print(f"{g}: {len(rows)} rows without a paper UniProt mapping -> {acc} ({sp[acc]['entry_name']}), "

@@ -49,7 +49,7 @@ def main():
     nb = nb.groupby("model").logp.mean().to_frame("all").join(nb.pivot_table(index="model", columns="group",
                                                                              values="logp")[GROUPS])
 
-    rows, n_avg = [], []
+    rows, n_avg, missing = [], [], []
     for r in idx.itertuples():
         ds = Subsets.from_path(a.out / r.archive).dataset
         assert len(ds.assays) == 1 and ds.name == r.dataset
@@ -59,7 +59,10 @@ def main():
         df.columns = [assay.sequence_feature_name] + cols if df.shape[1] == len(cols) + 1 else cols
         ref = bet.loc[bet.gene_pheno == r.gene_pheno, ["variant_id", "hgvsp"] + MODELS]
         df = df.merge(ref, on=["variant_id", "hgvsp"], how="left", validate="one_to_one")
-        assert len(df) == r.n_variants and df[MODELS].notna().all().all()
+        assert len(df) == r.n_variants
+        if df[MODELS].isna().any().any():                     # rows the paper does not have (e.g. API-built set)
+            missing.append((r.dataset, int(df[MODELS[0]].isna().sum())))
+            df = df.dropna(subset=MODELS)
         n_avg.append(len(ds.to_df()))
         for m in MODELS:
             rr, p = pearsonr(df.beta.astype(float), df[m].astype(float))
@@ -75,6 +78,9 @@ def main():
     print(f"\nmax |ours - paper|: overall {diff['all'].max():.4f} (paper printed 2 decimals), "
           f"per group {diff[GROUPS].max().max():.2e}")
     print(f"max |archives - notebook code on raw table|: {dnb:.2e}")
+    if missing:
+        print(f"rows without paper scores (dropped for this check): {sum(n for _, n in missing)} in "
+              f"{len(missing)} archives: {missing[:10]}")
     print(f"archives {len(idx)}, rows {idx.n_variants.sum()}, rows after Dataset.to_df() averaging {sum(n_avg)}")
     ok = diff["all"].max() <= 0.005 and diff[GROUPS].max().max() < 1e-5 and dnb < 1e-9
     print("REPRODUCED" if ok else "MISMATCH")
