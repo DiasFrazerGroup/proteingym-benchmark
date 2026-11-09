@@ -121,6 +121,27 @@ def structures_for(u, wt, afdb):
     return out
 
 
+MSA_DESC = ("MSA generated with ColabFold (MMseqs2) on UniRef100 (UniProt 2026_01) with all post-alignment "
+            "filtering disabled.")
+
+
+def a3m_check(path, wt):
+    """First a3m record must be the wild type (match states = upper case + '-'); returns the depth."""
+    n, first, cur = 0, None, []
+    with open(path) as f:
+        for line in f:
+            if line.startswith(">"):
+                n += 1
+                if n == 2:
+                    first = "".join(cur)
+                cur = []
+            elif n == 1:
+                cur.append(line.strip())
+    first = first if first is not None else "".join(cur)
+    assert first.replace("-", "") == wt and first == first.upper(), f"{path}: first record is not the wild type"
+    return dict(n_sequences=n)
+
+
 def slug(x):
     return re.sub(r"[^A-Z0-9]+", "_", x.upper()).strip("_")
 
@@ -141,6 +162,9 @@ def main():
     ap.add_argument("--sprot", type=Path, required=True)
     ap.add_argument("--afdb", type=Path, required=True)
     ap.add_argument("--out", type=Path, default=Path("datasets/clinical/genebass"))
+    ap.add_argument("--msa-dir", type=Path, default=None,
+                    help="<UNIPROT>.a3m per protein (scripts/clinical/msa: ColabFold on UniRef100 2026_01, no "
+                         "post-alignment filtering); without it the archives carry no MSA")
     a = ap.parse_args()
     build, splits = a.out / "build", a.out / "splits"
     for d in (build, splits):
@@ -202,7 +226,12 @@ def main():
         assert st, f"no AFDB structure for {u}"
         for s in st:
             shutil.copy(s["path"], d / s["path"].name)
-        prot[u] = dict(info, structures=st, sprot_identical=(info["sequence"] == wt), length=len(wt))
+        msa = None
+        if a.msa_dir:
+            src = a.msa_dir / f"{u}.a3m"
+            msa = dict(path=d / f"{u}_colabfold_uniref100.a3m", **a3m_check(src, wt))
+            shutil.copy(src, msa["path"])
+        prot[u] = dict(info, structures=st, msa=msa, sprot_identical=(info["sequence"] == wt), length=len(wt))
 
     # --- one archive per pair ------------------------------------------------------------------------------------
     rows = []
@@ -248,6 +277,13 @@ def main():
                   'afdb_version = "v6"',
                   *[f'{k} = "{s[k]}"' for k in ["fragment", "n_fragments", "span_start", "span_end", "n_mismatch",
                                                "mismatches", "mean_plddt"]], ""]
+        if pr["msa"]:
+            mp = pr["msa"]
+            m += ["[[msas]]", f'path = "../../proteins/{u}/{mp["path"].name}"', f'name = "{name}_colabfold"',
+                  'format = "a3m"', f'reference_sequence_name = "{u}"',
+                  f"description = {toml_str(MSA_DESC)}", "",
+                  "[msas.metadata]", f'n_sequences = "{mp["n_sequences"]}"', 'database = "UniRef100 2026_01"',
+                  'method = "colabfold_search monomer, filter 0, no cluster expansion, no envdb"', ""]
         m += ["[publication]", 'title = "Systematic single-variant and gene-based association testing of thousands of phenotypes in 394,841 UK Biobank exomes"',
               'author = "Karczewski, Konrad J. and others"', 'journal = "Cell Genomics"', 'volume = "2"', 'number = "9"', 'year = "2022"',
               f'doi = "{GENEBASS_DOI}"', ""]
@@ -262,6 +298,7 @@ def main():
                          skato_pval_plof=p.pval_plof, burden_beta_plof=p.beta_plof, seq_length=pr["length"],
                          n_variants=len(assay), n_unique_mutants=assay["mutant"].nunique(),
                          n_structures=len(pr["structures"]),
+                         msa_n_sequences=pr["msa"]["n_sequences"] if pr["msa"] else None,
                          mean_plddt=round(np.mean([s["mean_plddt"] for s in pr["structures"]]), 2),
                          wt_equals_sprot_2026_03=pr["sprot_identical"], archive=f"splits/{out.name}"))
         print(f"{name:55s} {len(assay):4d} variants  {group}", flush=True)

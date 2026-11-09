@@ -50,7 +50,9 @@ There is one archive per gene–phenotype pair, as PG2 does one archive per (pro
     All fragments are included, each with its residue span on the wild type in `metadata` (`span_start`,
     `span_end`), plus `n_mismatch` and mean pLDDT.
   - Choosing a fragment per position is left to the model API.
-- **MSA:** none yet, because alignment-based models are out of scope for now.
+- **MSA:** ColabFold MSA on UniRef100 2026_01 with no post-alignment filtering, the PG2 protocol (see
+  [scripts/clinical/msa](../../../scripts/clinical/msa/README.md)). One per protein, the same file in all its
+  archives, named `<archive>_colabfold`. Added when the builder gets `--msa-dir`.
 - **Split:** one trivial 2-fold split, because the zero-shot runner needs a `.splits.pgdata` and ignores the folds.
 
 ## Evaluation (the paper's metric, to be implemented as the clinical stage)
