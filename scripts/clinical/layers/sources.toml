@@ -1,0 +1,38 @@
+# Sources for the annotation layers (add_layers.py). Paths are on the CRG cluster; change them here, not in code.
+
+[tabix]
+path = "/no_backup/diasfrazer/egalpern_pgb_clinical/bin/tabix"      # htslib 1.11, static (copied from cpugh/bin)
+
+[dbnsfp]
+# dbNSFP 5.3.1a academic, GRCh38. Supplies AlphaMissense, popEVE and CADD per SNV (per-transcript fields resolved
+# by UniProt accession and protein position).
+path = "/no_backup/diasfrazer/cpugh/data/dbNSFP/dbNSFP5.3.1a_grch38.gz"
+version = "dbNSFP 5.3.1a (GRCh38)"
+
+[snv_index]
+# protein change -> SNVs that cause it, for datasets without genomic coordinates (DMS, protein-only clinical sets).
+# Built once by build_snv_index.py from AlphaMissense_hg38.tsv.gz (all possible missense SNVs of UniProt canonical
+# isoforms, GENCODE v32 canonical transcripts).
+path = "/no_backup/diasfrazer/egalpern_pgb_clinical/layers/am_hg38_snv_index.parquet"
+source = "/no_backup/diasfrazer/db/alphamissense/raw/AlphaMissense_hg38.tsv.gz"
+
+[uniprot]
+# full-length canonical sequences for protein_length and for placing the archive wild type on UniProt numbering
+path = "/no_backup/diasfrazer/db/uniprot_sprot_human/uniprot_sprot_human.dat.gz"
+version = "Swiss-Prot human 2026_03"
+
+[plddt]
+# AlphaFold DB v6 human proteome models (AF-<UniProt>-F<k>-model_v6.pdb), used for mask_plddt when the archive's
+# structures carry no pLDDT (proteingym-base zeroes B-factors when it builds archives)
+afdb_dir = "/users/diasfrazer/egalpern/project/human_proteome_de/data/structures"
+
+[primateai3d]
+# PrimateAI-3D (Gao et al., Science 2023) is distributed by Illumina after registration; not available locally.
+# When downloaded, set path to the hg38 score table. The columns below are the published file's; adjust if different.
+path = ""
+version = "PrimateAI-3D"
+chrom = "chr"
+pos = "pos"
+ref = "non_flipped_ref"
+alt = "non_flipped_alt"
+score = "score_PAI3D"

@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
-# Rebuild the Genebass archives with the ColabFold/UniRef100 MSAs, then rerun the Fig. 6b reproduction check.
+# Rebuild the Genebass archives with the ColabFold/UniRef100 MSAs, then rerun the Fig. 6b reproduction check,
+# then add the annotation layers (scripts/clinical/layers).
 # Archives go to $WORK/genebass (large: MSAs are copied into every archive); the index CSV is copied into the repo.
 set -euo pipefail
 F=/no_backup/diasfrazer/db/vesm_djzn25_figdata/extracted/data/Fig6_data
@@ -9,5 +10,7 @@ F=/no_backup/diasfrazer/db/vesm_djzn25_figdata/extracted/data/Fig6_data
   --msa-dir "$WORK/genebass_msas" --out "$WORK/genebass"
 "$PY" scripts/clinical/check_genebass.py --fig6 "$F" --out "$WORK/genebass"
 cp "$WORK/genebass/genebass_fig6b.csv" datasets/clinical/genebass/genebass_fig6b.csv
-du -sh "$WORK/genebass/splits"
+# annotation layers (external scores + masks): final archives in $WORK/genebass/splits_layers
+"$PY" scripts/clinical/layers/add_layers.py "$WORK"/genebass/splits/*.splits.pgdata --out "$WORK/genebass/splits_layers"
+du -sh "$WORK/genebass/splits" "$WORK/genebass/splits_layers"
 echo "REBUILD OK"
