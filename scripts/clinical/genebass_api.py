@@ -3,8 +3,10 @@
 Replaces the VESM authors' extraction (figshare Fig6_data) as the source of association data. Writes tables in the
 same schema as the paper's, so build_genebass.py can use them (--hits / --betas):
 
-  pairs   Genebass portal top pLoF gene-phenotype associations (SKAT-O P < 1e-6) for the "Blood biochemistry"
-          phenotypes (the paper's 332 = this list; checked against the paper and reported)
+  pairs   the Genebass portal's top pLoF gene-phenotype associations (pairs where any gene-level test, SKAT-O, SKAT or
+          burden, has P < 1e-6) for the VESM paper's 27 blood-biochemistry phenotypes (the 31 "Blood biochemistry"
+          phenotypes minus C-reactive protein, oestradiol, rheumatoid factor and the custom TG/HDL ratio). This gives
+          the paper's 332 pairs plus 12 it does not have (reason unknown); flagged by `in_vesm_paper`.
   gene    pval_/beta_ {plof, mis, syn} = SKAT-O Pvalue / BETA_Burden of burden sets pLoF, missense|LC, synonymous
   variant single-variant BETA / Pvalue (+ test AC/AF) from variant-associations, joined to variant-qc annotation
           (consequence, hgvsp, cohort allele_count/number/frequency); missense_variant rows only
@@ -71,10 +73,14 @@ def main():
     a.fetch.mkdir(parents=True, exist_ok=True)
 
     phen = pd.DataFrame(jload(a.raw / "meta/phenotypes.json.gz"))
-    bio = phen[phen.astype(str).apply(lambda r: "Blood biochemistry" in " ".join(r), axis=1)]
+    bio = phen[phen.category.astype("string").str.contains("Blood biochemistry", na=False)]
+    excluded = {"continuous-30710-both_sexes--irnt", "continuous-30800-both_sexes--irnt",
+                "continuous-30820-both_sexes--irnt", "continuous-ratio_TG_HDL_custom-both_sexes--custom"}
+    bio = bio[~bio.analysis_id.isin(excluded)]
+    assert len(bio) == 27, len(bio)
     desc = bio.set_index("analysis_id").description.to_dict()
     top = pd.DataFrame(jload(a.raw / "meta/top_associations__pLoF.json.gz"))
-    pairs = top[top.analysis_id.isin(desc) & (top.Pvalue < 1e-6)].copy()
+    pairs = top[top.analysis_id.isin(desc)].copy()           # the portal list itself (min gene-level P < 1e-6)
     pairs["code"] = pairs.analysis_id.str.split("-").str[1]
     pairs["gene_pheno"] = pairs.gene_symbol + "_" + pairs.code
     pairs = pairs.drop_duplicates("gene_pheno")
@@ -94,6 +100,8 @@ def main():
                          **{c: pairs[c] for c in ["pval_plof", "pval_mis", "pval_syn", "beta_plof", "beta_mis",
                                                   "beta_syn"]},
                          "analysis_id": pairs.analysis_id, "ensg": pairs.gene_id})
+    paper_pairs = set(pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits.csv").gene_pheno)
+    hits["in_vesm_paper"] = hits.gene_pheno.isin(paper_pairs)
     hits.to_csv(a.out / "genebass_api_hits.csv", index=False)
 
     # variants
