@@ -64,6 +64,9 @@ def main():
             missing.append((r.dataset, int(df[MODELS[0]].isna().sum())))
             df = df.dropna(subset=MODELS)
         n_avg.append(len(ds.to_df()))
+        if len(df) < 3:                                       # e.g. a pair left with too few mappable rows
+            missing.append((r.dataset, f"only {len(df)} rows, skipped"))
+            continue
         for m in MODELS:
             rr, p = pearsonr(df.beta.astype(float), df[m].astype(float))
             rows.append(dict(dataset=r.dataset, group=r.biomarker_group, model=m, r=rr, logp=-np.log10(p)))
@@ -79,7 +82,7 @@ def main():
           f"per group {diff[GROUPS].max().max():.2e}")
     print(f"max |archives - notebook code on raw table|: {dnb:.2e}")
     if missing:
-        print(f"rows without paper scores (dropped for this check): {sum(n for _, n in missing)} in "
+        print(f"rows without paper scores / skipped pairs (this check only): "
               f"{len(missing)} archives: {missing[:10]}")
     print(f"archives {len(idx)}, rows {idx.n_variants.sum()}, rows after Dataset.to_df() averaging {sum(n_avg)}")
     ok = diff["all"].max() <= 0.005 and diff[GROUPS].max().max() < 1e-5 and dnb < 1e-9

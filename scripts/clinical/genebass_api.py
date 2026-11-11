@@ -116,7 +116,7 @@ def main():
         if va.empty or an.empty:
             print(f"WARNING no variant data for {r.gene_pheno}", flush=True)
             continue
-        an = an[(an.consequence == "missense_variant") & (an.gene_id == r.ensg)]   # own gene only
+        an = an[an.consequence == "missense_variant"].drop_duplicates("variant_id")
         v = va.rename(columns={"BETA": "beta", "Pvalue": "pval", "AC": "assoc_ac", "AF": "assoc_af"}).merge(
             an[["variant_id", "consequence", "hgvsp", "allele_count", "allele_number", "allele_frequency",
                 "homozygote_count"]], on="variant_id")

@@ -44,6 +44,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pyarrow.dataset as pads
 from proteingym.base import Dataset, Manifest
 from proteingym.base.splits import KFoldSplitter
 
@@ -166,6 +167,10 @@ def main():
     ap.add_argument("--sprot", type=Path, required=True)
     ap.add_argument("--afdb", type=Path, required=True)
     ap.add_argument("--out", type=Path, default=Path("datasets/clinical/genebass"))
+    ap.add_argument("--snv-index", type=Path,
+                    default=Path("/no_backup/diasfrazer/egalpern_pgb_clinical/layers/am_hg38_snv_index.parquet"),
+                    help="AlphaMissense hg38 SNV -> protein change index (scripts/clinical/layers/build_snv_index.py),"
+                         " used for rows the paper's mapping table does not cover")
     ap.add_argument("--msa-dir", type=Path, default=None,
                     help="<UNIPROT>.a3m per protein (scripts/clinical/msa: ColabFold on UniRef100 2026_01, no "
                          "post-alignment filtering); without it the archives carry no MSA")
@@ -204,21 +209,46 @@ def main():
     ok = pd.Series([on_wt(u, m) for u, m in zip(var.uniprot_id, var.uniprot_mut)], index=var.index)
     var["mapping"] = np.where(ok, "paper_uniprot", "")
     unmapped = []
+    snv_idx = pads.dataset(a.snv_index) if a.snv_index else None
     for g, rows in var[~ok].groupby("gene"):
-        acc = gene2acc.get(g)
-        ref = seq.get(acc, sp[acc]["sequence"]) if acc else None      # keep the paper wild type if it has one
-        hit = map_by_offset(rows.hgvsp.tolist(), ref) if acc else None
-        if not hit:                                                     # cannot be placed on a UniProt wild type
-            print(f"WARNING {g}: {len(rows)} rows cannot be mapped onto Swiss-Prot ({acc}); dropped "
-                  f"(listed in build/unmapped_rows.tsv)", flush=True)
+        # protein: the paper's UniProt entry for this gene if it maps other rows, else Swiss-Prot by gene symbol
+        mapped_u = var.loc[ok & (var.gene == g), "uniprot_id"]
+        acc = mapped_u.iloc[0] if len(mapped_u) else gene2acc.get(g)
+        if not acc:
+            print(f"WARNING {g}: no UniProt entry; {len(rows)} rows dropped", flush=True)
             unmapped.append(rows)
             continue
-        o, muts = hit
+        ref = seq.get(acc, sp[acc]["sequence"])                      # keep the paper wild type if it has one
+        left = rows
+        # 1. by the row's own GRCh38 SNV: AlphaMissense hg38 table (SNV -> UniProt canonical protein change)
+        if snv_idx is not None:
+            t_ = snv_idx.to_table(filter=pads.field("uniprot_id") == acc).to_pandas()
+            look = {(c, int(p), r_, a_): pv for c, p, r_, a_, pv in
+                    zip(t_.chrom, t_.pos, t_.ref, t_.alt, t_.protein_variant)}
+            hits = {}
+            for i, vid in zip(left.index, left.variant_id):
+                c, p, r_, a_ = vid.split("-")
+                pv = look.get((c, int(p), r_, a_))
+                if pv and int(pv[1:-1]) <= len(ref) and ref[int(pv[1:-1]) - 1] == pv[0]:
+                    hits[i] = pv
+            if hits:
+                idx = list(hits)
+                var.loc[idx, ["uniprot_id", "uniprot_mut", "mapping"]] = [[acc, hits[i], "am_snv_index"] for i in idx]
+                print(f"{g}: {len(idx)} rows mapped by SNV (AlphaMissense hg38) -> {acc} ({sp[acc]['entry_name']})")
+                left = left.drop(idx)
+        # 2. constant ENSP -> UniProt offset, only when enough rows make a chance match implausible
+        hit = map_by_offset(left.hgvsp.tolist(), ref) if len(left) >= 10 else None
+        if hit:
+            o, muts = hit
+            var.loc[left.index, ["uniprot_id", "uniprot_mut", "mapping"]] = [[acc, m, f"swissprot_offset{o:+d}"]
+                                                                             for m in muts]
+            print(f"{g}: {len(left)} rows mapped by a constant ENSP offset {o:+d} -> {acc}, all residues match")
+            left = left.iloc[:0]
+        if len(left):
+            print(f"WARNING {g}: {len(left)} rows cannot be mapped onto {acc}; dropped "
+                  f"(listed in build/unmapped_rows.tsv)", flush=True)
+            unmapped.append(left)
         seq.setdefault(acc, ref)
-        var.loc[rows.index, ["uniprot_id", "uniprot_mut", "mapping"]] = [[acc, m, f"swissprot_offset{o:+d}"]
-                                                                         for m in muts]
-        print(f"{g}: {len(rows)} rows without a paper UniProt mapping -> {acc} ({sp[acc]['entry_name']}), "
-              f"ENSP position {o:+d}, all wild-type residues match")
     if unmapped:
         um = pd.concat(unmapped)
         um.to_csv(build / "unmapped_rows.tsv", sep="\t", index=False)
