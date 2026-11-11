@@ -35,8 +35,8 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
   proteins: 4 h 24 min on 64 CPUs, 38 GB.
 - [x] **Annotation layers** for any archive: AlphaMissense, popEVE and CADD (dbNSFP 5.3.1a); pLDDT, full length and
   UniProt positions. Validated against the paper, AlphaMissense's own tables and raw AFDB files.
-- [x] **Reports:** [genebass.md](genebass.md), [long_proteins.md](long_proteins.md), this file. The project
-  overview (report 1) is waiting for approval of its goals.
+- [x] **Reports:** [genebass.md](genebass.md), [long_proteins.md](long_proteins.md), this file. The project overview is in
+  [project.md](project.md).
 
 ## Running
 
@@ -79,5 +79,5 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
 | pLDDT from the original AFDB files | Ours (proteingym-base zeroes B-factors) |
 | No PrimateAI-3D scraping; licensed download only | Ours (licence terms) |
 | Model scope for now: masked marginal, 1,022 context; alignment models deferred, now to be included | User, 2026-11-06 → 2026-11-09 |
-| Model API (long proteins, sparse scoring) owned by the collaborator; our side is the data | User |
+| The work split is not fixed; data and model changes go on separate branches, never coupled (see [project.md](project.md#5-organisation-of-the-work)) | User, 2026-11-11 |
 | All compute as sbatch jobs on genoa64, not in the interactive session | User, 2026-11-09 |
