@@ -35,6 +35,9 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fig6", type=Path, required=True)
     ap.add_argument("--out", type=Path, default=Path("datasets/clinical/genebass"))
+    ap.add_argument("--paper-rows-only", action="store_true",
+                    help="restrict to the paper's Fig. 6b pairs and the paper's own variant rows (joined on "
+                         "variant_id): the exact-reproduction test for archives built from Genebass (genebass_api)")
     a = ap.parse_args()
     idx = pd.read_csv(a.out / "genebass_fig6b.csv")
     bet = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits_all_variants_betas.csv.gz")
@@ -50,16 +53,27 @@ def main():
                                                                              values="logp")[GROUPS])
 
     rows, n_avg, missing = [], [], []
+    paper_pairs = set(b.gene_pheno)
     for r in idx.itertuples():
+        if a.paper_rows_only and r.gene_pheno not in paper_pairs:
+            continue
         ds = Subsets.from_path(a.out / r.archive).dataset
         assert len(ds.assays) == 1 and ds.name == r.dataset
         assay = ds.assays[0]
         cols = [f.name for f in assay.fields]
         df = pd.DataFrame([[x.value if hasattr(x, "value") else x for x in rec] for rec in assay.records])
         df.columns = [assay.sequence_feature_name] + cols if df.shape[1] == len(cols) + 1 else cols
-        ref = bet.loc[bet.gene_pheno == r.gene_pheno, ["variant_id", "hgvsp"] + MODELS]
-        df = df.merge(ref, on=["variant_id", "hgvsp"], how="left", validate="one_to_one")
-        assert len(df) == r.n_variants
+        if a.paper_rows_only:
+            ref = b.loc[b.gene_pheno == r.gene_pheno, ["variant_id"] + MODELS]
+            n_arch = len(df)
+            df = df.merge(ref, on="variant_id", how="inner", validate="one_to_one")
+            assert len(df) == len(ref), (r.dataset, len(df), len(ref))      # every paper row is in the archive
+            if n_arch != len(df):
+                missing.append((r.dataset, f"{n_arch - len(df)} extra Genebass rows ignored"))
+        else:
+            ref = bet.loc[bet.gene_pheno == r.gene_pheno, ["variant_id", "hgvsp"] + MODELS]
+            df = df.merge(ref, on=["variant_id", "hgvsp"], how="left", validate="one_to_one")
+            assert len(df) == r.n_variants
         if df[MODELS].isna().any().any():                     # rows the paper does not have (e.g. API-built set)
             missing.append((r.dataset, int(df[MODELS[0]].isna().sum())))
             df = df.dropna(subset=MODELS)

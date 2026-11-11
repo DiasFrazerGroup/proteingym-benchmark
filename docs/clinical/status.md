@@ -81,3 +81,38 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
 | Model scope for now: masked marginal, 1,022 context; alignment models deferred, now to be included | User, 2026-11-06 → 2026-11-09 |
 | The work split is not fixed; data and model changes go on separate branches, never coupled (see [project.md](project.md#5-organisation-of-the-work)) | User, 2026-11-11 |
 | All compute as sbatch jobs on genoa64, not in the interactive session | User, 2026-11-09 |
+
+## Picking this up
+
+Everything below runs on the CRG cluster as sbatch jobs on genoa64; don't compute in an interactive session.
+Python: `/users/diasfrazer/egalpern/project/proteingym_clinical/env/bin/python` (proteingym-base and its
+dependencies). `WORK=/no_backup/diasfrazer/egalpern_pgb_clinical`. Job IDs are appended to `$WORK/logs/jobs.txt`.
+
+1. **Check the final rebuild (job 31809884).**
+   - `squeue -u $USER`, then `tail $WORK/logs/rebuild_31809884.log`.
+   - Success ends with `REBUILD OK`, with 109 archives in `$WORK/genebass/splits/` and the layered versions in
+     `$WORK/genebass/splits_layers/`.
+   - The log's own check prints **MISMATCH. That is expected:** the Genebass set has more pairs and rows than the
+     paper. The real test is the exact one below, which must print `REPRODUCED`. It did for the archives without
+     MSAs (`$WORK/genebass_api/build`, job 31810196):
+
+     ```shell
+     sbatch -p genoa64 --qos=vshort -t 00:30:00 -c 2 --mem=32G --chdir=<repo> --wrap \
+       "$PY scripts/clinical/check_genebass.py --fig6 /no_backup/diasfrazer/db/vesm_djzn25_figdata/extracted/data/Fig6_data \
+        --out $WORK/genebass --paper-rows-only"
+     ```
+   - If the job ran out of memory or time: raise `--mem` or `--time`. MSAs are up to 3.9 GB each and are parsed by
+     proteingym-base. Then resubmit `scripts/clinical/msa/rebuild.sbatch` with the exports used in
+     `scripts/clinical/msa/pipeline.sh` (REPO, WORK, DB, MMSEQS, PY).
+2. **MSAs for the 5 proteins without one** (CST3 P01034, GPLD1 P80108, GPT P24298, SHBG P04278, SLC22A12 Q96S37):
+   - write their wild types to a FASTA;
+   - run `scripts/clinical/msa/search.sbatch` with that FASTA in place of `genebass_queries.fasta` (same DB, output
+     to `$WORK/genebass_msas`; minutes to an hour for 5 short proteins, but the database scan dominates);
+   - then rerun the rebuild.
+3. **Copy the index into the repo.** After a successful rebuild, `datasets/clinical/genebass/genebass_fig6b.csv` in
+   the repo is overwritten with the Genebass-sourced index (109 rows). Commit it on `clinical/genebass-data`.
+4. **Open decisions** (ask the user): whether the 6 Genebass-only pairs count in the headline metric; the AF2
+   structure setup; pushing the branch; hosting and licences; PrimateAI-3D.
+5. **Branch discipline** (see [project.md](project.md#5-organisation-of-the-work)): data work only on
+   `clinical/*-data` branches (`datasets/clinical/`, `scripts/clinical/`, `docs/clinical/`); model or evaluation
+   changes go on their own branches. Don't push without the user's OK.

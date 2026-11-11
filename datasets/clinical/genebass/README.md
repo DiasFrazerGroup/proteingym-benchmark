@@ -1,5 +1,7 @@
 # Genebass clinical datasets (VESM Fig. 6b setting)
 
+> **Superseded in part (2026-11-11):** the association data now come straight from Genebass (`scripts/clinical/genebass_api.py`), giving 109 archives / 66 proteins / 7,791 rows that reproduce the paper exactly on its own rows (`check_genebass.py --paper-rows-only`). The archives also carry ColabFold/UniRef100 MSAs and annotation layers. The current description is [docs/clinical/genebass.md](../../../docs/clinical/genebass.md). The text below describes the first, paper-sourced build (103 archives).
+
 Single-variant associations between missense variants and blood biomarkers in UK Biobank exomes
 ([Genebass](https://doi.org/10.1016/j.xgen.2022.100168)). The selection follows the VESM paper's Fig. 6b
 exactly ([bioRxiv 10.1101/2025.03.09.642148](https://doi.org/10.1101/2025.03.09.642148), notebook

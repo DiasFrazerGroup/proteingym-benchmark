@@ -55,7 +55,9 @@ From `compare_vs_paper.md`:
 - **Rows added to existing paper pairs:** LPA × 30790 (131 vs 60), UGT1A5 × 30660 (50 vs 31), UGT1A5 × 30840
   (59 vs 41), STAB1 × 30860 (108 vs 107).
 - **Reproduction:** on the paper's own rows, the archives give the paper's Fig. 6b values exactly, overall and per
-  group, e.g. VESM++ 2.472; per group 3.1187 / 2.1488 / 1.6384.
+  group, e.g. VESM++ 2.472; per group 3.1187 / 2.1488 / 1.6384. Test: `check_genebass.py --paper-rows-only`
+  (`REPRODUCED`, max difference 8.9e-16 against the notebook's code). The plain check reports MISMATCH on the
+  Genebass set, as expected, because of the extra pairs and rows.
 
 ## Mapping variants to proteins
 
