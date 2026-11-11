@@ -43,6 +43,8 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
 | Job | ID | What | Expected |
 |---|---|---|---|
 | `gb_rebuild` | 31809884 (genoa64, 8 CPU, 200 GB, ≤12 h) | Final Genebass archives: Genebass tables, MSAs, layers → `$WORK/genebass/splits_layers/` | Several hours (archives with multi-GB MSAs). The log ends `REBUILD OK`. |
+| `msa_new5` | 31810198 (genoa64, 64 CPU, 400 GB, ≤6 h) | MSAs for CST3, GPLD1, GPT, SHBG, SLC22A12 (`QUERIES=$WORK/genebass_queries_new5.fasta`, wild types taken from the built archives) → `$WORK/genebass_msas/` | 1–2 h (database scan). The log ends `SEARCH OK`, 66 `.a3m`. |
+| `gb_rebuild` | 31810199 (same as 31809884; after `msa_new5` OK and after 31809884 ends) | Rebuild with all 66 MSAs; supersedes 31809884's archives | Several hours; then run the `--paper-rows-only` check. |
 
 ## Pending
 
