@@ -203,17 +203,26 @@ def main():
 
     ok = pd.Series([on_wt(u, m) for u, m in zip(var.uniprot_id, var.uniprot_mut)], index=var.index)
     var["mapping"] = np.where(ok, "paper_uniprot", "")
+    unmapped = []
     for g, rows in var[~ok].groupby("gene"):
         acc = gene2acc.get(g)
         ref = seq.get(acc, sp[acc]["sequence"]) if acc else None      # keep the paper wild type if it has one
         hit = map_by_offset(rows.hgvsp.tolist(), ref) if acc else None
-        assert hit, f"cannot map {g} ({len(rows)} rows) onto Swiss-Prot"
+        if not hit:                                                     # cannot be placed on a UniProt wild type
+            print(f"WARNING {g}: {len(rows)} rows cannot be mapped onto Swiss-Prot ({acc}); dropped "
+                  f"(listed in build/unmapped_rows.tsv)", flush=True)
+            unmapped.append(rows)
+            continue
         o, muts = hit
         seq.setdefault(acc, ref)
         var.loc[rows.index, ["uniprot_id", "uniprot_mut", "mapping"]] = [[acc, m, f"swissprot_offset{o:+d}"]
                                                                          for m in muts]
         print(f"{g}: {len(rows)} rows without a paper UniProt mapping -> {acc} ({sp[acc]['entry_name']}), "
               f"ENSP position {o:+d}, all wild-type residues match")
+    if unmapped:
+        um = pd.concat(unmapped)
+        um.to_csv(build / "unmapped_rows.tsv", sep="\t", index=False)
+        var = var.drop(um.index)
     var = var.rename(columns={"uniprot_mut": "mutant"})
     pairs = pairs[pairs.gene_pheno.isin(var.gene_pheno)].merge(
         var[["gene_pheno", "uniprot_id", "biomarker_group"]].drop_duplicates(), on="gene_pheno", validate="1:1")
