@@ -297,18 +297,21 @@ predictions exported by `scripts/clinical/models/export_scores.py` as `v2__*`; l
 All four ported models now cover every pair (the prototype missed CST3, GPLD1 and UGT1A5). PottsMPNN and BLOSUM62
 are not ported yet (PottsMPNN needs the fragment logic; BLOSUM62 needs nothing).
 
-## 10. Picking this up (handoff, 2026-11-16)
+## 10. Picking this up
 
-State when the interactive session ended:
-- **Model side (this branch):** this doc only; no model code ported yet. Next: (1) finish §3.4 from a code audit of
-  the alignment models (the audit was running in a background agent that died with the session; rerun it: read
-  each `models/<m>/` card + evedesign `models/{eve,evcouplings,evmutation2}.py` + `proteingym.py` for MSA filters,
-  dropped positions, depth caps, L-scaling, first_index assumptions); (2) port the prototype subclasses
-  (`proteingym_clinical/models/clinical_window.py`, `clinical_struct.py`) into the folders of §5 with the
-  `special_tokens` option; (3) run T1–T2 on the GPU (§6).
-- **Layer coverage fix (data side):** worktree `project/pgb_clinical_layers`, branch `clinical/layers-sources`.
-  AlphaMissense from `/no_backup/diasfrazer/db/alphamissense/raw/AlphaMissense_hg38.tsv.gz`, popEVE from the local
-  release zip via Swiss-Prot RefSeq cross-references, CADD stays dbNSFP. Was being done by a background agent; check
-  `git log`/`git status` in that worktree and `$WORK/logs/jobs.txt` for what it finished.
-- **Data rebuild:** SLURM job 31919891 (in_vesm_paper flags), log `$WORK/logs/rebuild_31919891.log`; then commit
-  and push the index on `clinical/genebass-data` (see `docs/clinical/status.md` there).
+State on 2026-11-16 (evening):
+- **Done, validated (T1–T3), benchmarked:** `esm2_window`, `esmc_window`, `saprot_window`, `esm-if1_window`
+  (§9). They run in the prototype's zoo images (`project/proteingym_clinical/containers/*.sif`) with the new package
+  mounted (`scripts/clinical/models/validate_{plm,struct}_windows.sbatch`). Their own images are not built yet
+  (`build_images.sbatch esm2_window ...`).
+- **Data side:** final archives `$WORK/genebass/splits_layers/` (MSAs, layers from AlphaMissense/popEVE releases,
+  `in_vesm_paper` flags); the model runs used the no-MSA copies in `$WORK/genebass_api/build/splits/` (same rows).
+- **Next, in order:**
+  1. Alignment-model images: job 31923582 (`$WORK/logs/build_images_*.log`); rebuild `gemme` (download failed).
+  2. T5 on APOB, LRP2, PKD1 + one mid-size protein: region archives (§3.4: crop WT, MSA match columns, structure
+     fragment; re-filter rows by coverage in the region; random depth cap; weights once per region), run the
+     unchanged zoo models on them, map predictions back. Then NaN instead of WT for unscored positions (EVmutation,
+     RSALOR, GEMME) and per-protein failure handling.
+  3. Port PottsMPNN with `fragments.py` (most-central fragment) and BLOSUM62 unchanged; decide `special_tokens`
+     (§8) — ESMC is the only model where it matters (benchmark 2.181 termini vs 2.200 every_window).
+  4. Open: residual vs dark-energy ESM2 scores on long proteins (max 1.3, r 0.99997).
