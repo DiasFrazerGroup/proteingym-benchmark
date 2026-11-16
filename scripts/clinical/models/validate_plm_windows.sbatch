@@ -16,5 +16,5 @@ apptainer exec --nv --cleanenv --env HF_HOME=/hf,TORCH_HOME=/hf,PYTHONPATH=/src 
   --bind "$P/hf:/hf" --bind "$REPO/models/${M}_window/src:/src:ro" --bind "$REPO/models/${M}_window/README.md:/card.md:ro" --bind "$REPO/scripts/clinical/models:/scripts:ro" \
   --bind "$ARCH:/data:ro" --bind "$OUT:/out" \
   "$P/$M.sif" bash -c "cd /opt/program && .venv/bin/python /scripts/validate_plm_windows.py $M /data /card.md --out /out $*" 2>&1 \
-  | grep -v "Loading weights"
+  | grep --line-buffered -v "Loading weights"
 echo "PLM WINDOWS DONE"

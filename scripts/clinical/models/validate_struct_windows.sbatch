@@ -17,5 +17,5 @@ apptainer exec --nv --cleanenv --env HF_HOME=/hf,TORCH_HOME=/hf,PYTHONPATH=/src 
   --bind "$P/hf:/hf" --bind "$REPO/models/$F/src:/src:ro" --bind "$REPO/models/$F/README.md:/card.md:ro" \
   --bind "$REPO/scripts/clinical/models:/scripts:ro" --bind "$ARCH:/data:ro" --bind "$OUT:/out" \
   "$P/$SIF" bash -c "cd /opt/program && .venv/bin/python /scripts/validate_struct_windows.py $M /data /card.md --out /out $*" 2>&1 \
-  | grep -v "Loading weights\|UserWarning\|labeled_dataset_from_df"
+  | grep --line-buffered -v "Loading weights\|UserWarning\|labeled_dataset_from_df"
 echo "STRUCT WINDOWS DONE"

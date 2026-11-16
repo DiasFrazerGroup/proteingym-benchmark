@@ -4,7 +4,7 @@ Runs inside the model's zoo image with the *_window package on PYTHONPATH.
   T1  proteins with one structure and L <= 1022: window model == zoo model from the same package
       saprot: identical scores; esm-if1: window == L * (zoo(mut) - zoo(wt))   (first 3 proteins, <= 40 mutants each)
   T4  proteins with several structures (AFDB fragments): placement and per-position assignment are logged
-Writes per-variant scores for every protein to --out/scores.parquet (entry, mutant, L, n_structures, score).
+Every archive is scored; writes per-variant scores (deduplicated per protein) to --out/scores.parquet (entry, mutant, L, n_structures, score).
 Usage: python validate_struct_windows.py saprot|esmif1 ARCHIVE_DIR CARD --out DIR [--limit N]
 """
 import argparse
@@ -44,8 +44,7 @@ for f in files:
     sub = Subsets.from_path(f)
     system, _, test = dataset_to_evedesign(sub, split=None, target="beta", test_fold=None)
     ref = "".join(system[0].rep)
-    if ref in seen:
-        continue
+    first = ref not in seen                      # every archive is scored (pairs of one protein differ in variants)
     seen.add(ref)
     if a.limit and len(seen) > a.limit:
         break
@@ -62,11 +61,11 @@ for f in files:
     muts = ["".join(f"{r}{i + 1}{b}" for i, (r, b) in enumerate(zip(ref, "".join(x[0].rep))) if b != r) for x in inst]
     rows.append(pd.DataFrame(dict(entry=entry, mutant=muts, L=L, n_structures=ns, score=sc)))
     msg = f"{entry} L={L} structures={ns} n={len(inst)} {time.time() - t:.1f}s"
-    if ns > 1 and a.which == "saprot":
+    if ns > 1 and a.which == "saprot" and first:
         asg = m.structure_assignment
         msg += f" | {len(set(asg))} structures used, uncovered {sum(x is None for x in asg)}"
     print(msg, flush=True)
-    if ns == 1 and L <= 1022 and len(t1) < 3:
+    if first and ns == 1 and L <= 1022 and len(t1) < 3:
         sub_inst = inst[:40]
         z = Zoo(**zoo_hp).build(system)
         zs = np.array([x.score for x in z.score(sub_inst)])
@@ -79,6 +78,9 @@ for f in files:
         t1.append(d)
         print(f"  T1 {entry}: max diff vs zoo = {d:.2e}", flush=True)
 
-pd.concat(rows, ignore_index=True).to_parquet(a.out / "scores.parquet")
+out = pd.concat(rows, ignore_index=True)
+spread = out.groupby(["entry", "mutant"]).score.agg(lambda x: x.max() - x.min()).max()   # same variant, other archive
+print(f"same variant scored in several archives: max spread {spread:.2e}")
+out.drop_duplicates(["entry", "mutant"]).to_parquet(a.out / "scores.parquet")
 print(f"\nT1 ({len(t1)} proteins): max diff = {max(t1) if t1 else float('nan'):.2e} "
       f"{'PASS' if t1 and max(t1) < 1e-3 else 'CHECK'}")

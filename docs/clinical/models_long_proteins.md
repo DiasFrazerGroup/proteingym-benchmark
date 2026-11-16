@@ -247,7 +247,33 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 | 2026-11-16 | T1 saprot_window, 3 short proteins (job 31921437) | max diff vs zoo 6.7e-6: **PASS** | `$WORK/logs/struct_windows_saprot_smoke_31921437.log` |
 | 2026-11-16 | esm2_window full run on 1g.20gb with the card's batch 64 (job 31921334) | CUDA OOM (64 × 1,022-residue windows); rerun with batch 8 (31921955) | — |
 | 2026-11-16 | esm-if1_window smoke (job 31921438) | ImportError: fair-esm imported before the zoo module patches biotite (same bug as the prototype); fixed import order, rerun 31921956 | — |
-| 2026-11-16 | Pending: esm2_window all 66 proteins (31921955), esmc_window windows 1022/2048/full (31921335), saprot_window all proteins incl. fragments (31921957), esm-if1_window smoke (31921956) | — | `$WORK/models/` |
+| 2026-11-16 | esm2_window, 66 proteins, 5,840 unique mutants (job 31923533, 3g.40gb, batch 16) | T1 on all 48 proteins ≤ 1,022 aa: 1.6e-5 **PASS**; termini vs every_window on L > 1,022: r 0.99998 (max 0.18) | `$WORK/models/plm_windows/esm2/` |
+| 2026-11-16 | esmc_window windows 1,022 / 2,048 / full (job 31921335, 26 min on 3g.40gb) | T1 48 proteins 2.7e-5 **PASS**; termini vs every_window r 0.9985 (max 1.73): ESMC is more sensitive to edge tokens than ESM2 | `$WORK/models/plm_windows/esmc/` |
+| 2026-11-16 | saprot_window, every archive (job 31923536) | T1 1.1e-5 **PASS**; APOB/LRP2/PKD1 use all 16–18 fragments, no position uncovered; same variant in different archives: spread 1e-5 | `$WORK/models/struct_windows/saprot/` |
+| 2026-11-16 | Per-variant comparison with earlier implementations (`scripts/clinical/models/export_scores.py`) | see "T2/T3 results" below | — |
+
+### T2/T3 results (2026-11-16)
+
+Per variant, Pearson r and max abs difference; L ≤ 1,022: 2,933 variants, L > 1,022: 2,621 variants.
+
+| New | Reference | L ≤ 1,022 | L > 1,022 |
+|---|---|---|---|
+| esm2_window every_window | prototype esm2_window (every window) | 1.00000 / 1.4e-5 | **1.00000 / 3e-6** |
+| esm2_window termini | prototype esm2_window | 1.00000 | 0.99998 / 0.18 |
+| esm2_window termini | dark-energy ESM2 650M masked (termini convention, fair-esm code) | 1.00000 / 1.3e-5 | 0.99997 / 1.3 |
+| esm2_window every_window | dark-energy ESM2 650M masked | 1.00000 | 0.99995 / 1.28 |
+| esmc_window every_window | prototype esmc_window | 1.00000 / 2.7e-5 | **1.00000 / 7e-5** |
+| esmc_window termini 1,022 | prototype | 1.00000 | 0.99853 / 1.73 |
+| esmc_window termini 2,048 | prototype | 1.00000 | 0.99663 / 1.94 |
+| esmc_window full length | prototype | 1.00000 | 0.99159 / 3.6 |
+| saprot_window (termini) | prototype saprot_clinical (every window, fragment datasets) | 1.00000 / 1.9e-5 | 0.99920 / 1.46 |
+
+- The ports reproduce the prototype exactly in the same token mode, which confirms the prototype put `<cls>`/`<eos>`
+  on every window.
+- The residual against the dark-energy scores on long proteins (max 1.3) is the same in both token modes, so it is
+  not the edge tokens; open (candidates: the window placement at the ends, fair-esm vs transformers numerics).
+- **Benchmark effect of the ESMC choices is small** (Genebass, mean −log10 P, all 109 pairs): 2,048 window 2.200,
+  every_window 1,022 2.200, full length 2.192, termini 1,022 2.181 (prototype on its 105 pairs: 2.159).
 
 ## 10. Picking this up (handoff, 2026-11-16)
 
