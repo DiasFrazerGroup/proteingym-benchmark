@@ -58,7 +58,7 @@ Nothing in the runner handles length.
 | `pottsmpnn` | Works (one encoder pass; ~21k aa on 24 GB measured elsewhere) | — |
 | structure models with fragments | evedesign asserts one chain, `first_index = 1`; several fragments are passed as separate structures | runner |
 | all structure models | **pLDDT is 0 inside every archive** | proteingym-base zeroes B-factors when it writes structures |
-| `eve`, `evmutation`, `evmutation2`, `gemme`, `rsalor`, `structuredca` | See [§3.4](#34-alignment-models) (audit in progress) | MSA depth and L-scaling |
+| `eve`, `evmutation`, `evmutation2`, `gemme`, `rsalor`, `structuredca` | **Not feasible** at L ≈ 4,500 with N ≈ 1M (memory 100+ GB, O(N²) weighting); some score unscored positions as WT | MSA depth, L-scaling, no region support; see [§3.4](#34-alignment-models) |
 | `blosum62` | Fine | — |
 
 ## 3. Solutions per model family
@@ -112,13 +112,58 @@ StructureDCA: see §3.4 (it also needs the MSA).
 
 ### 3.4 Alignment models
 
-Pending the code audit (EVE, EVmutation/plmc, EVmutation2, GEMME, RSALOR, StructureDCA): MSA filters and which
-positions they drop, depth caps and weighting cost, L²·q² memory, behaviour on positions without a score, and where
-a region/window rebuild fits. Candidate solutions to test:
-- depth cap by subsampling (EVE already caps at 200k);
-- region models: one model per window of a few hundred residues around the variants (as ProteinGym v1 did for
-  EVE with focus regions), most-central region per position;
-- positions the model cannot score → missing prediction (NaN), reported as coverage, never silently 0.
+Code audit 2026-11-16 (wrappers in `models/`, evedesign 0.0.5 for five models, 0.0.6 for `eve`; upstream packages
+not inspected are marked [inferred]). N = MSA depth (up to 1.16M), L = length, q = 21.
+
+**Shared runner and conversion.**
+- Exceptions are not caught: one failure kills that dataset's run, no predictions written. Only `eve` pre-filters
+  invalid instances; in the other five one invalid instance raises (`evedesign/model.py:200-216`).
+- `dataset_to_evedesign` builds one Python `Sequence` per a3m row (`proteingym.py:69-75`) and `remove_inserts()`
+  copies it again (`sequence.py:274-290`): several GB of Python strings for the deepest MSAs before any model runs.
+- `first_index = 1` hard-coded (`proteingym.py:139`), first MSA only (`:61`), `msa_weights` from the dataset are used
+  if present (`:63-67`), single-chain structures asserted (`:94`); "MSA target region != full sequence" is an open TODO
+  (`:147-148`).
+
+| | eve | evmutation (plmc) | evmutation2 | gemme | rsalor | structuredca |
+|---|---|---|---|---|---|---|
+| query == WT check | focus columns only | yes, raises | length only | yes | yes (+ raises if trimmed) | yes |
+| depth cap | 200k random (`max_msa_depth`) | none | 2,048 for the encoder, whole MSA parsed first | JET2: first 20k rows; R: full MSA | none [min_seqid 0.35, inferred] | none [min_seqid 0.25, inferred] |
+| filters | fragments > 50% gaps dropped; all columns kept | columns > 50% gaps (unweighted) excluded; no fragment filter | — | none | upstream | none |
+| weighting | dense numpy O(N²·20L) | numba O(N²L) on the full MSA | — | JET2 | C++ O(N²L) [inferred] | C++ O(N²L) [inferred] |
+| unscored positions | none | **excluded columns: mutant = WT (0), not NaN** | none | NA cells add 0 | **no-RSA positions: mutant = WT** | upstream |
+| needs structure | no | no | no | dummy | **one full-length chain** | **exactly one structure, one chain** |
+| hardware | GPU (weights, one-hot on CPU) | CPU/OpenMP | CPU | CPU, JVM 4 GB | CPU | CPU |
+
+**Why they fail on long proteins (L ≈ 4,300–4,700, N up to 1.16M):**
+- **EVE:** one-hot training matrix float64 N×L×20 = ~138 GB at the 200k cap and L = 4,300; weighting is one gemv
+  over it per sequence; VAE ~0.9B parameters (~15 GB GPU with Adam) [inferred]. The 50% fragment filter drops most
+  domain-local ColabFold hits on long proteins [inferred], so Neff collapses.
+- **EVmutation:** alignment as N×L U1 array ~21 GB for LRP2, weights via `np.vectorize` (5×10⁹ Python calls), N²
+  weighting ~6×10¹⁵ comparisons; plmc couplings L(L−1)/2·q² ≈ 4×10⁹ floats ≈ 16 GB per vector, L-BFGS keeps several
+  (> 100 GB) [inferred]. Columns excluded for gaps silently score 0.
+- **EVmutation2:** whole MSA parsed; 16 encoder samples each with an L×L×c_z pair representation (~11 GB each at
+  L = 4,655, c_z ≈ 128) [inferred]; ~O(L³) triangle updates on CPU [inferred].
+- **GEMME:** R (`computePred.R`) receives the full 1.16M×L FASTA [inferred: far beyond 100 GB]; JET2 gets the top
+  20k rows in a3m order, not a random sample.
+- **RSALOR, StructureDCA:** need one full-length single-chain structure, which AFDB does not provide above 2,700 aa;
+  positions without RSA score as WT.
+
+**Solution to implement (region models):**
+1. A region step between `dataset_to_evedesign` and `build`: crop the wild type, the MSA match columns (after
+   `remove_inserts`), any weights and the structure (renumbered) to a region [s, e) around the variants; set
+   `first_index = s+1`; crop the instances. The query still equals the cropped wild type, so all query checks pass,
+   and every model indexes instances by array position, so cropping instances is enough.
+2. Inside each region: drop rows that are mostly gaps in the region, then cap depth by random sampling, then compute
+   (or supply) sequence weights once per region. Supplying `msa_weights` skips in-model weighting for EVE and
+   EVmutation.
+3. Regions: windows of a few hundred residues (size per model, set by memory: L²·q² for EVmutation), most-central
+   region per variant (same rule as the PLM windows); for structure-needing models, the region must lie inside one
+   AFDB fragment.
+4. Positions a model cannot score → **NaN**, never 0/WT: patch EVmutation (excluded columns), RSALOR (no RSA) and
+   GEMME (NA cells) wrappers to return NaN, and catch per-protein failures in the runner so one protein does not
+   lose the dataset.
+5. Test T5 first on APOB, LRP2, PKD1 and one mid-size protein: memory, time, coverage, and region vs full length on
+   a protein where full length fits.
 
 ## 4. Validation protocol
 
@@ -147,8 +192,11 @@ Planned folders (copies of the zoo folder, same Dockerfile/Singularity.def/lockf
 | `models/saprot_window` | `SaProtWindow` | zoo `saprot` |
 | `models/esm-if1_window` | `ESMIF1Window` | zoo `esm-if1` |
 
-Shared logic (window bounds, most-central tile/fragment) is duplicated per folder as a small `window.py`, to keep
-folders self-contained. Upstream route later: windowed `score_mutants` in evedesign's `ESM2` would fix `esm2` and
+Shared logic is duplicated per folder to keep folders self-contained: `window.py` (PLM windows, `esm2_window`,
+`esmc_window`), `fragments.py` (structure placement and most-central assignment, `saprot_window`, `esm-if1_window`).
+Validation scripts and job wrappers: `scripts/clinical/models/validate_{plm,struct}_windows.{py,sbatch}` (run in the
+prototype's zoo images with the new package mounted on `PYTHONPATH`; proper images still to build). Outputs in
+`$WORK/models/`, job IDs in `$WORK/logs/jobs.txt`. Upstream route later: windowed `score_mutants` in evedesign's `ESM2` would fix `esm2` and
 `esmc` at once.
 
 ## 6. Running on the CRG cluster
@@ -192,6 +240,10 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 | Date | What | Result | Where |
 |---|---|---|---|
 | 2026-11-16 | Doc started; prototype results re-evaluated on the final Genebass set | §7 | `proteingym_clinical/genebass/results/genebass_source_*` |
+| 2026-11-16 | Alignment-model code audit | §3.4: none feasible on L ≈ 4,500 / N ≈ 1M; some score unscored positions as WT | — |
+| 2026-11-16 | `esm2_window`, `esmc_window` ported (shared `window.py`, `special_tokens` option) | — | `models/esm*_window/` |
+| 2026-11-16 | T1 esm2_window, 3 short proteins (job 31921230) | max abs diff vs zoo `score_mutants` 4.8e-7: **PASS** | `$WORK/logs/plm_windows_esm2_smoke_31921230.log` |
+| 2026-11-16 | `saprot_window`, `esm-if1_window` ported with `fragments.py` (structure placed on the WT by sequence, most-central structure per position) | APOB: 17 fragments placed at 1, 201, …, 3,201 (identity ≥ 0.9993, Y1422C), no position uncovered (local check) | `models/{saprot,esm-if1}_window/` |
 
 ## 10. Picking this up (handoff, 2026-11-16)
 
