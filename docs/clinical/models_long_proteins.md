@@ -338,12 +338,15 @@ are not ported yet (PottsMPNN needs the fragment logic; BLOSUM62 needs nothing).
 
 ## 10. Picking this up
 
-**Progress note (T5, alignment models; keep updated):** region code committed (`scripts/clinical/models/regions/`,
-§3.4). Region archives built for APOB, LRP2, PKD1 (W 500, 1,000) and PCSK9 (W 250, 500, full) in
-`$WORK/models/regions/archives/`. T5 jobs running (job IDs in `$WORK/logs/jobs.txt`, lines `run_regions ...`):
-rsalor, structuredca, evmutation on all four; eve timing test on one PCSK9 region (GPU). evmutation2 image
-rebuilding (job 31923694), gemme image blocked (lcqb.upmc.fr download server gives empty replies). Results ->
-`collect_regions.py summary --models ... --tag t5`.
+**Progress note (T5, alignment models; keep updated, 2026-11-16 ~22:00):** region code committed
+(`scripts/clinical/models/regions/`, §3.4). T5 archives in `$WORK/models/regions/archives/` (APOB, LRP2, PKD1 at
+W 500/1,000; PCSK9 at 250/500/full), predictions in `$WORK/models/regions/preds/<model>/t5/`. Done: rsalor,
+structuredca, evmutation2 (GPU) on PCSK9 + long proteins, evmutation on PCSK9/APOB, eve one PCSK9 region (92 min
+on 3g.40gb). Still running: evmutation LRP2/PKD1 (W500, W1000). Full run (W1,000, all 66 proteins) in
+`$WORK/models/regions/full/{archives,preds}`: rsalor done and exported (`predictions/v2__rsalor`), structuredca,
+evmutation2, evmutation running (job IDs in `$WORK/logs/jobs.txt`). eve and gemme not in the full run (cost /
+image). Then: `collect_regions.py --arch .../full/archives --preds .../full/preds export ...` per model and
+`16_eval_genebass_source.py`.
 
 State on 2026-11-16 (evening):
 - **Done, validated (T1–T3), benchmarked:** `esm2_window`, `esmc_window`, `saprot_window`, `esm-if1_window`
