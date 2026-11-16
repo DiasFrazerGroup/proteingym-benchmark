@@ -40,22 +40,28 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
 
 ## Running
 
-| Job | ID | What | Expected |
-|---|---|---|---|
-| `gb_rebuild` | 31919891 (genoa64, 8 CPU, 200 GB, ≤4 h) | Rebuild with all 66 MSAs and the `in_vesm_paper` flags (index column + assay non-target), layers → `$WORK/genebass/splits_layers/`; runs the all-rows check (MISMATCH expected) and the `--paper-set` check (must print REPRODUCED) | ~2 h (last rebuild 1 h 45 min, 147 GB peak). The log ends `REBUILD OK`. |
+Nothing on the data side. Model work (long proteins) is on branch `clinical/model-api`, documented in
+`docs/clinical/models_long_proteins.md` there.
 
-Earlier jobs, all finished: rebuild 31809884 and 31810199 (`REBUILD OK`), MSAs for the 5 new proteins 31810198
-(`SEARCH OK`, 66 `.a3m`).
+Finished 2026-11-16:
+- Rebuild 31919891 with all 66 MSAs and the `in_vesm_paper` flags: `paper set (in_vesm_paper): 103 of 109 archives,
+  6,977 rows (paper: 103 pairs, 6,977 rows)`, all-rows check MISMATCH (expected), `--paper-set` check **REPRODUCED**,
+  `REBUILD OK` (2 h 06 min).
+- Layers with the new sources (branch `clinical/layers-sources`, merged here): job 31922391 on the final archives,
+  `LAYERS OK` (42 min). AlphaMissense 100% of rows, popEVE 73.6%, CADD 99.9% (see
+  [layers_sources_progress.md](layers_sources_progress.md)).
+- `$WORK/genebass/splits/` (63 GB, uncompressed archives without layers) deleted after the checks, as agreed.
+  The final archives are `$WORK/genebass/splits_layers/`; to rebuild them, rerun `scripts/clinical/msa/rebuild.sbatch`.
+
+Earlier jobs: rebuild 31809884 and 31810199, MSAs for the 5 new proteins 31810198 (`SEARCH OK`, 66 `.a3m`).
 
 ## Pending
 
-1. **After 31919891:** check `REPRODUCED` in the log, commit the updated
-   `datasets/clinical/genebass/genebass_fig6b.csv` (new columns `in_vesm_paper`, `n_variants_vesm_paper`), push,
-   then delete `$WORK/genebass/splits/` (63 GB, uncompressed duplicate of `splits_layers/`; agreed 2026-11-16).
+1. **Hosting:** files stay local on the cluster for now (user, 2026-11-16). Licence handling for the score layer
+   (AlphaMissense CC BY-NC-SA 4.0, CADD non-commercial) before any public release.
 2. **Clinical evaluation stage in the repo:** per-pair Pearson and −log10 P, overall and per group, plus Spearman
    and per-gene variants; headline on all archives and rows, with a switch for the paper's set (`in_vesm_paper`).
    It needs model predictions, which in turn need the model API for long proteins.
-3. **Hosting** of the archives (Hugging Face vs cluster only) and licence handling for the score layer: not decided.
 4. **Later tasks:** ClinVar (needs proteome scale), BRaVa (feasibility analysed; variant-level files not downloaded
    yet), de novo variants.
 5. **proteingym-base issue to report:** archive structures lose pLDDT (B-factors set to 0).
