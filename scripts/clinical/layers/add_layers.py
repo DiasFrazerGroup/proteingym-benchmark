@@ -4,8 +4,9 @@ Layers are extra non-target columns on every assay row, for comparison and for m
 model inputs or targets.
 
   scores  (external predictors, as published, per variant; empty for multi-mutants or when not covered)
-    score_alphamissense   AlphaMissense pathogenicity, 0-1, higher = more pathogenic           [dbNSFP]
-    score_popeve          popEVE, more negative = more deleterious                             [dbNSFP]
+    score_alphamissense   AlphaMissense pathogenicity, 0-1, higher = more pathogenic  [AlphaMissense hg38 table]
+    score_alphamissense_source  snv (UniProt + the row's GRCh38 SNV) | protein (UniProt + protein change) | none
+    score_popeve          popEVE, more negative = more deleterious               [popEVE v1.1 zip, per RefSeq protein]
     score_cadd_phred      CADD PHRED-scaled, higher = more deleterious                         [dbNSFP]
     score_primateai3d     PrimateAI-3D, higher = more pathogenic        [Illumina file; only if configured]
   masks   (per row)
@@ -14,19 +15,24 @@ model inputs or targets.
     mask_protein_length   length of the full canonical UniProt protein (not the archive's sequence segment)
   helpers
     uniprot_pos           mutated position(s) in canonical UniProt numbering (':'-joined for multi-mutants)
-    score_snv_source      how SNVs were found: genomic (the row's own GRCh38 SNV) | protein (all SNVs causing the
-                          protein change, via the AlphaMissense hg38 table; scores averaged) | none
+    score_snv_source      SNVs used for CADD / PrimateAI-3D: genomic (the row's own GRCh38 SNV) | protein (all SNVs
+                          causing the protein change, via the AlphaMissense hg38 table; scores averaged) | none
 
 Per row, the variant is read from the `mutant` column (e.g. A12V or A12V:K40E, numbered on the archive's wild type),
 or derived from the mutated sequence. The archive wild type is placed on the canonical UniProt sequence (exact,
 substring, or global alignment), so DMS archives on a domain still get UniProt positions and the full length.
-If the row has a GRCh38 SNV column (default `variant_id`, e.g. 2-21041028-G-A), external scores use that exact SNV.
+If the row has a GRCh38 SNV column (default `variant_id`, e.g. 2-21041028-G-A), SNV-level scores use that exact SNV.
 
-dbNSFP fields are per transcript; the transcript is chosen by UniProt accession and protein position (then by
-accession and amino acids, e.g. Ensembl/UniProt numbering offsets), and is recorded only through score_snv_source.
-
-Rows and their order are unchanged, so the archive's splits (slices.json) stay valid; the result is reloaded with
-proteingym-base as a check. Sources and versions: sources.toml (also written into each column's description).
+Each score comes from its own complete release (paths and versions in sources.toml):
+  AlphaMissense  the official hg38 table (canonical isoforms), as a parquet sorted by UniProt (build_snv_index.py);
+                 looked up by (UniProt, SNV), else by (UniProt, protein change). Its sequence is rebuilt from the
+                 wild-type letters of protein_variant and placed on the current UniProt sequence by alignment if it
+                 differs.
+  popEVE         the v1.1 zip, one CSV per RefSeq protein, read in place. UniProt -> RefSeq from Swiss-Prot DR
+                 lines (displayed isoform first); the RefSeq sequence (from `mutant`) is checked against UniProt and
+                 positions mapped by alignment if it differs. The RefSeq used is in the column description and in
+                 layers_summary.tsv.
+  CADD           dbNSFP (SNV-level).
 
 Run: python add_layers.py ARCHIVE... --out DIR [--layers scores,masks] [--snv-col variant_id] [--force]
 """
@@ -39,7 +45,6 @@ import sys
 import tempfile
 import tomllib
 import zipfile
-from functools import lru_cache
 from pathlib import Path
 
 import numpy as np
@@ -126,62 +131,145 @@ def site_plddt(structs, wt):  # noqa: C901
 
 
 # --- external scores ----------------------------------------------------------------------------------------------
-class SnvScores:
-    """dbNSFP (AlphaMissense, popEVE, CADD) and optional PrimateAI-3D for GRCh38 SNVs, resolved per UniProt protein."""
+def sequence_from_mutants(mutants):
+    """Wild-type sequence implied by a list of 'A12V' substitutions ('X' at positions without any)."""
+    wt = {}
+    for m in mutants:
+        g = MUT_RE.match(m)
+        if g:
+            wt[int(g[2])] = g[1]
+    return "".join(wt.get(i, "X") for i in range(1, max(wt, default=0) + 1))
+
+
+def place(canon, other):
+    """canonical UniProt position -> position on `other` (a source's own sequence); plus a short note."""
+    if not canon or not other:
+        return {}, "no sequence"
+    if len(canon) == len(other) and all(a == b or b == "X" for a, b in zip(canon, other)):
+        return {i: i for i in range(1, len(canon) + 1)}, "identical to the UniProt canonical sequence"
+    m, ident = position_map(canon, other)
+    diff = sum(canon[i - 1] != other[j - 1] for i, j in m.items())
+    return m, (f"differs from the UniProt canonical sequence (lengths {len(canon)}/{len(other)}); positions mapped "
+               f"by alignment: {len(m)}/{len(canon)} canonical positions placed, {diff} mismatched, identity "
+               f"{ident:.3f}")
+
+
+class AlphaMissense:
+    """AlphaMissense hg38 table (parquet from build_snv_index.py), per UniProt accession: score by (UniProt, GRCh38
+    SNV), else by protein change (mean over its SNVs; AlphaMissense is protein-level so they agree). Also the SNV
+    index (protein change -> causing SNVs) for SNV-level scores."""
 
     def __init__(self, cfg):
-        self.cfg = cfg
+        self.path = cfg["alphamissense"]["table"]
+        self.cache = {}
+
+    def protein(self, uniprot, canon):
+        if uniprot not in self.cache:
+            t = pads.dataset(self.path).to_table(filter=pads.field("uniprot_id") == uniprot).to_pandas()
+            seq = sequence_from_mutants(t.protein_variant.unique())
+            pos_map, note = place(canon, seq)
+            snv = dict(zip(zip(t.chrom, t.pos, t.ref, t.alt), zip(t.protein_variant, t.am_pathogenicity)))
+            by_pv = {pv: (float(g.am_pathogenicity.mean()), list(zip(g.chrom, g.pos, g.ref, g.alt)))
+                     for pv, g in t.groupby("protein_variant")}
+            self.cache = {uniprot: dict(seq=seq, map=pos_map, note=note, snv=snv, pv=by_pv)}   # one protein at a time
+        return self.cache[uniprot]
+
+    @staticmethod
+    def key(p, wt_aa, upos, alt_aa):
+        """protein_variant on AlphaMissense numbering for a change at canonical position upos (None if not placed)."""
+        q = p["map"].get(upos) if upos else None
+        return f"{wt_aa}{q}{alt_aa}" if q and p["seq"][q - 1] == wt_aa else None
+
+
+class PopEVE:
+    """popEVE per RefSeq protein, read straight from the release zip; UniProt -> RefSeq via Swiss-Prot DR lines."""
+
+    def __init__(self, cfg, refseq):
+        c = cfg["popeve"]
+        self.zip = zipfile.ZipFile(c["zip"])
+        self.score = c["score"]
+        self.members = {Path(n).stem.split(".")[0]: n for n in self.zip.namelist() if n.endswith(".csv")}
+        self.refseq = refseq
+        self.cache = {}
+
+    def protein(self, uniprot, canon):
+        """-> dict(np, seq, map, note, scores{mutant on RefSeq numbering: score}) or None if no RefSeq in popEVE."""
+        if uniprot in self.cache:
+            return self.cache[uniprot]
+        best = None
+        for np_acc, displayed in self.refseq.get(uniprot, []):
+            name = self.members.get(np_acc.split(".")[0])
+            if not name:
+                continue
+            d = pd.read_csv(self.zip.open(name), usecols=["mutant", self.score])
+            seq = sequence_from_mutants(d.mutant)
+            pos_map, note = place(canon, seq)
+            rank = (note.startswith("identical"), displayed, len(pos_map))
+            if best is None or rank > best[0]:
+                used = Path(name).stem
+                if used != np_acc:
+                    note += f"; Swiss-Prot lists {np_acc}, popEVE has {used}"
+                best = (rank, dict(np=used, seq=seq, map=pos_map, note=note,
+                                   scores=dict(zip(d.mutant, d[self.score].astype(float)))))
+        self.cache = {uniprot: best[1] if best and best[1]["map"] else None}               # one protein at a time
+        return self.cache[uniprot]
+
+    @staticmethod
+    def get(p, wt_aa, upos, alt_aa):
+        q = p["map"].get(upos) if p and upos else None
+        return p["scores"].get(f"{wt_aa}{q}{alt_aa}", np.nan) if q and p["seq"][q - 1] == wt_aa else np.nan
+
+
+def read_refseq(path):
+    """Swiss-Prot human DR RefSeq lines: accession -> [(NP_xxx.y, is_displayed_isoform)], displayed isoforms first.
+    Lines without an isoform marker belong to entries with a single (displayed) isoform."""
+    out, acc, disp, rows = {}, None, None, []
+    with gzip.open(path, "rt") as f:
+        for line in f:
+            tag = line[:2]
+            if tag == "AC" and acc is None:
+                acc = line[5:].split(";")[0].strip()
+            elif tag == "CC" and (g := re.search(r"IsoId=([^;,]+)[^;]*; Sequence=Displayed", line)):
+                disp = g[1]
+            elif tag == "DR" and line[5:].startswith("RefSeq;"):
+                g = re.match(r"RefSeq; (NP_\d+\.\d+);[^\[]*(?:\[([^\]]+)\])?", line[5:])
+                if g:
+                    rows.append((g[1], g[2]))
+            elif tag == "//":
+                out[acc] = sorted({(n, iso is None or iso == disp) for n, iso in rows}, key=lambda x: not x[1])
+                acc, disp, rows = None, None, []
+    return out
+
+
+class Dbnsfp:
+    """dbNSFP for GRCh38 SNVs: CADD PHRED (SNV-level, no transcript choice), and optional PrimateAI-3D."""
+
+    def __init__(self, cfg):
         self.tabix = cfg["tabix"]["path"]
         self.db = cfg["dbnsfp"]["path"]
         with gzip.open(self.db, "rt") as f:
             self.hdr = {c: i for i, c in enumerate(f.readline().rstrip("\n").split("\t"))}
-        need = ["#chr", "pos(1-based)", "ref", "alt", "aaref", "aaalt", "aapos", "Uniprot_acc",
-                "AlphaMissense_score", "popEVE_score", "CADD_phred"]
+        need = ["#chr", "pos(1-based)", "ref", "alt", "CADD_phred"]
         missing = [c for c in need if c not in self.hdr]
         assert not missing, f"dbNSFP columns missing: {missing}"
         self.pai = cfg["primateai3d"] if cfg["primateai3d"].get("path") else None
 
-    def dbnsfp(self, snvs):
-        """{(chrom,pos,ref,alt)} -> DataFrame of raw dbNSFP rows (strings)."""
+    def cadd(self, snvs):
+        """{(chrom,pos,ref,alt)} -> {snv: CADD PHRED}."""
         if not snvs:
-            return pd.DataFrame()
+            return {}
         with tempfile.NamedTemporaryFile("w", suffix=".tsv") as reg:
-            for c, p in sorted({(s[0], s[1]) for s in snvs}, key=lambda x: (x[0], x[1])):
+            for c, p in sorted({(s[0], s[1]) for s in snvs}):
                 reg.write(f"{c}\t{p}\t{p}\n")
             reg.flush()
             out = subprocess.run([self.tabix, "-R", reg.name, self.db], capture_output=True, text=True, check=True)
-        h = self.hdr
-        rows = [r.split("\t") for r in out.stdout.splitlines()]
-        rows = [r for r in rows if (r[h["#chr"]], int(r[h["pos(1-based)"]]), r[h["ref"]], r[h["alt"]]) in snvs]
-        cols = ["#chr", "pos(1-based)", "ref", "alt", "aaref", "aaalt", "aapos", "Uniprot_acc",
-                "AlphaMissense_score", "popEVE_score", "CADD_phred"]
-        d = pd.DataFrame([[r[h[c]] for c in cols] for r in rows], columns=cols).drop_duplicates()
-        d["key"] = list(zip(d["#chr"], d["pos(1-based)"].astype(int), d.ref, d.alt))
-        return d
-
-    @staticmethod
-    def resolve(row, uniprot, upos, wt_aa, alt_aa):
-        """Pick the transcript entry of a dbNSFP row for this protein; returns (am, popeve, cadd) floats."""
-        def split(x):
-            return x.split(";")
-        acc, apos = split(row.Uniprot_acc), split(row.aapos)
-        n = max(len(acc), len(apos))
-        get = (lambda v, i: v[i] if len(v) == n else v[0])
-        aa_ok = row.aaref == wt_aa and row.aaalt == alt_aa
-        idx = [i for i in range(n) if get(acc, i).split("-")[0] == uniprot and get(apos, i) == str(upos)]
-        if not idx and aa_ok:
-            idx = [i for i in range(n) if get(acc, i).split("-")[0] == uniprot] or \
-                  [i for i in range(n) if get(apos, i) == str(upos)]
-        if not idx:
-            return np.nan, np.nan, np.nan
-
-        def val(field):
-            v = split(getattr(row, field))
-            x = get(v, idx[0])
-            return float(x) if x not in {".", ""} else np.nan
-
-        return val("AlphaMissense_score"), val("popEVE_score"), \
-            (float(row.CADD_phred) if row.CADD_phred not in {".", ""} else np.nan)
+        h, res = self.hdr, {}
+        for line in out.stdout.splitlines():
+            r = line.split("\t")
+            k = (r[h["#chr"]], int(r[h["pos(1-based)"]]), r[h["ref"]], r[h["alt"]])
+            if k in snvs and r[h["CADD_phred"]] not in {".", ""}:
+                res[k] = float(r[h["CADD_phred"]])
+        return res
 
     def primateai3d(self, snvs):
         if not self.pai or not snvs:
@@ -197,13 +285,6 @@ class SnvScores:
             hits.append(ch.merge(want, on=["chrom", "pos", "ref", "alt"]))
         h = pd.concat(hits)
         return {(r.chrom, r.pos, r.ref, r.alt): r.s for r in h.itertuples()}
-
-
-@lru_cache(maxsize=64)
-def snv_index_for(path, uniprot):
-    t = pads.dataset(path).to_table(filter=pads.field("uniprot_id") == uniprot).to_pandas()
-    return t.groupby("protein_variant")[["chrom", "pos", "ref", "alt"]].apply(
-        lambda g: [tuple(x) for x in g.itertuples(index=False)]).to_dict()
 
 
 # --- archive I/O -------------------------------------------------------------------------------------------------
@@ -251,15 +332,27 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
             st = [(*read_ca(f.read_bytes()), 0) for f in files]
             if st:
                 plddt, plddt_src = site_plddt(st, wt), "afdb_v6"
-    v = cfg["dbnsfp"]["version"]
+    am_p = pe_p = None
+    if "scores" in layers and uniprot and canon:
+        am_p = scorer["am"].protein(uniprot, canon)
+        pe_p = scorer["popeve"].protein(uniprot, canon)
+    am_info = (f"UniProt {uniprot}: AlphaMissense sequence {am_p['note']}" if am_p and am_p["map"] else
+               f"UniProt {uniprot} not in AlphaMissense")
+    pe_info = (f"RefSeq {pe_p['np']} for UniProt {uniprot}: {pe_p['note']}" if pe_p else
+               f"no popEVE RefSeq protein for UniProt {uniprot}")
     desc = {
         "uniprot_pos": f"mutated position(s) on the canonical UniProt sequence ({cfg['uniprot']['version']})",
-        "score_alphamissense": f"AlphaMissense pathogenicity (0-1, higher = more pathogenic); {v}",
-        "score_popeve": f"popEVE score (more negative = more deleterious); {v}",
-        "score_cadd_phred": f"CADD PHRED (higher = more deleterious); {v}",
+        "score_alphamissense": "AlphaMissense pathogenicity (0-1, higher = more pathogenic), by UniProt + GRCh38 SNV, "
+                               f"else by protein change; {cfg['alphamissense']['version']}; {am_info}",
+        "score_alphamissense_source": "how the AlphaMissense value was found: snv (UniProt + the row's GRCh38 SNV) | "
+                                      "protein (UniProt + protein change; mean over its SNVs) | none",
+        "score_popeve": f"popEVE score (more negative = more deleterious), by protein change; "
+                        f"{cfg['popeve']['version']}; {pe_info}",
+        "score_cadd_phred": f"CADD PHRED (higher = more deleterious); {cfg['dbnsfp']['version']}",
         "score_primateai3d": f"PrimateAI-3D score (higher = more pathogenic); {cfg['primateai3d']['version']}",
-        "score_snv_source": "SNVs used for the scores: genomic (row's own GRCh38 SNV), protein (all SNVs causing "
-                            "the protein change, AlphaMissense hg38 table; scores averaged), none",
+        "score_snv_source": "SNVs used for the SNV-level scores (CADD, PrimateAI-3D): genomic (row's own GRCh38 SNV), "
+                            "protein (all SNVs causing the protein change, AlphaMissense hg38 table; scores "
+                            "averaged), none",
         "mask_plddt": "AlphaFold pLDDT of the mutated residue in this archive's structure(s), most central "
                       "fragment; multi-mutants: minimum over sites",
         "mask_plddt_source": "pLDDT source: archive (its own structures) | afdb_v6 (AlphaFold DB v6 models of the "
@@ -283,37 +376,44 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
             new["mask_protein_length"] = [len(canon) if canon else np.nan] * len(df)
         if "scores" in layers:
             single = [m[0] if m and len(m) == 1 else None for m in parsed]
-            snvs_of, src = [], []
-            idx = snv_index_for(cfg["snv_index"]["path"], uniprot) if uniprot else {}
+            snvs_of, src, am, am_src, pe = [], [], [], [], []
             for i, s in enumerate(single):
+                upos = pmap.get(s[1]) if s else None
+                key = AlphaMissense.key(am_p, s[0], upos, s[2]) if s and am_p else None
                 g = SNV_RE.match(df[snv_col].iat[i]) if snv_col in df and s else None
-                if g:
-                    snvs_of.append([(g[1].upper().removeprefix("CHR"), int(g[2]), g[3].upper(), g[4].upper())])
+                snv = (g[1].upper().removeprefix("CHR"), int(g[2]), g[3].upper(), g[4].upper()) if g else None
+                if snv:
+                    snvs_of.append([snv])
                     src.append("genomic")
-                elif s and pmap.get(s[1]):
-                    hits = idx.get(f"{s[0]}{pmap[s[1]]}{s[2]}", [])
-                    snvs_of.append(hits)
-                    src.append("protein" if hits else "none")
+                elif key and key in am_p["pv"]:
+                    snvs_of.append(am_p["pv"][key][1])
+                    src.append("protein")
                 else:
                     snvs_of.append([])
                     src.append("none")
+                if snv and am_p and snv in am_p["snv"]:
+                    am.append(float(am_p["snv"][snv][1]))
+                    am_src.append("snv")
+                    scorer["am_snv_vs_protein"].append((path.name, f"{s[0]}{s[1]}{s[2]}", am_p["snv"][snv][0], key))
+                elif key and key in am_p["pv"]:
+                    am.append(am_p["pv"][key][0])
+                    am_src.append("protein")
+                else:
+                    am.append(np.nan)
+                    am_src.append("none")
+                pe.append(PopEVE.get(pe_p, s[0], upos, s[2]) if s else np.nan)
             allsnv = {x for xs in snvs_of for x in xs}
-            d = scorer.dbnsfp(allsnv)
-            byk = {k: g for k, g in d.groupby("key")} if len(d) else {}
-            pai = scorer.primateai3d(allsnv)
-            am, pe, cadd, p3 = [], [], [], []
-            for s, xs in zip(single, snvs_of):
-                vals = [SnvScores.resolve(r, uniprot, pmap.get(s[1]), s[0], s[2])
-                        for x in xs for r in byk.get(x, pd.DataFrame()).itertuples()] if s else []
-                arr = np.array(vals, dtype=float).reshape(-1, 3)
-                with np.errstate(all="ignore"), __import__("warnings").catch_warnings():
-                    __import__("warnings").simplefilter("ignore", RuntimeWarning)   # all-NaN columns -> NaN
-                    m = np.nanmean(arr, axis=0) if len(arr) else np.full(3, np.nan)
-                am.append(m[0]); pe.append(m[1]); cadd.append(m[2])
+            cadd_of = scorer["dbnsfp"].cadd(allsnv)
+            pai = scorer["dbnsfp"].primateai3d(allsnv)
+            cadd, p3 = [], []
+            for xs in snvs_of:
+                cv = [cadd_of[x] for x in xs if x in cadd_of]
+                cadd.append(float(np.mean(cv)) if cv else np.nan)
                 pv = [pai[x] for x in xs if x in pai]
                 p3.append(float(np.mean(pv)) if pv else np.nan)
-            new.update(score_alphamissense=am, score_popeve=pe, score_cadd_phred=cadd, score_snv_source=src)
-            if scorer.pai:
+            new.update(score_alphamissense=am, score_alphamissense_source=am_src, score_popeve=pe,
+                       score_cadd_phred=cadd, score_snv_source=src)
+            if scorer["dbnsfp"].pai:
                 new["score_primateai3d"] = p3
         clash = [c for c in new if c in df.columns]
         if clash and not force:
@@ -324,8 +424,11 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
         nt = [x for x in asec.get("non_targets", []) if x["name"] not in new]
         asec["non_targets"] = nt + [{"name": c, "description": desc[c]} for c in new]
         cov = {c: float(np.mean([x != "" for x in df[c]])) for c in new}
+        extra = dict(am_sequence=am_p["note"] if am_p else "", popeve_refseq=pe_p["np"] if pe_p else "",
+                     popeve_sequence=pe_p["note"] if pe_p else "") if "scores" in layers else {}
         summary.append(dict(archive=path.name, assay=asec["name"], rows=len(df), uniprot=uniprot,
-                            wt_to_uniprot_identity=round(ident, 4), **{f"cov_{c}": round(x, 4) for c, x in cov.items()}))
+                            wt_to_uniprot_identity=round(ident, 4), **{f"cov_{c}": round(x, 4) for c, x in cov.items()},
+                            **extra))
     inner["manifest.lock"] = (toml.dumps(man).encode(), inner["manifest.lock"][1])
     outer["dataset.pgdata"] = (zip_bytes(inner), outer["dataset.pgdata"][1])
     out = out_dir / path.name
@@ -355,12 +458,20 @@ def main():
     a.out.mkdir(parents=True, exist_ok=True)
     assert all(p.resolve().parent != a.out.resolve() for p in a.archives), "--out must differ from the input folder"
     sprot, _ = read_sprot(cfg["uniprot"]["path"])
-    scorer = SnvScores(cfg) if "scores" in layers else None
+    scorer = dict(am=AlphaMissense(cfg), popeve=PopEVE(cfg, read_refseq(cfg["uniprot"]["path"])), dbnsfp=Dbnsfp(cfg),
+                  am_snv_vs_protein=[]) if "scores" in layers else None
     rows = []
     for p in a.archives:
         rows += annotate(p, a.out, cfg, sprot, scorer, layers, a.snv_col, a.mutant_col, a.force)
         print("\t".join(f"{k}={v}" for k, v in rows[-1].items()), flush=True)
     pd.DataFrame(rows).to_csv(a.out / "layers_summary.tsv", sep="\t", index=False)
+    if scorer:   # AlphaMissense found by SNV: does the SNV's protein change agree with the row's (UniProt numbering)?
+        chk = pd.DataFrame(scorer["am_snv_vs_protein"], columns=["archive", "variant", "am_snv_protein_variant",
+                                                                 "expected_protein_variant"])
+        bad = chk[chk.am_snv_protein_variant != chk.expected_protein_variant]
+        bad.to_csv(a.out / "layers_am_snv_mismatch.tsv", sep="\t", index=False)
+        print(f"AlphaMissense by SNV: {len(chk)} rows, {len(bad)} whose SNV gives another protein change "
+              f"(layers_am_snv_mismatch.tsv)")
     print(f"done: {len(a.archives)} archives -> {a.out}")
 
 

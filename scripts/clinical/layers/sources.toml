@@ -4,17 +4,32 @@
 path = "/no_backup/diasfrazer/egalpern_pgb_clinical/bin/tabix"      # htslib 1.11, static (copied from cpugh/bin)
 
 [dbnsfp]
-# dbNSFP 5.3.1a academic, GRCh38. Supplies AlphaMissense, popEVE and CADD per SNV (per-transcript fields resolved
-# by UniProt accession and protein position).
+# dbNSFP 5.3.1a academic, GRCh38. Supplies CADD per SNV (CADD is SNV-level, so no transcript choice is needed).
+# AlphaMissense and popEVE are NOT taken from here any more: dbNSFP's per-transcript fields left 17% of the Genebass
+# rows without AlphaMissense and 54% without popEVE (see [alphamissense] and [popeve]).
 path = "/no_backup/diasfrazer/cpugh/data/dbNSFP/dbNSFP5.3.1a_grch38.gz"
 version = "dbNSFP 5.3.1a (GRCh38)"
 
-[snv_index]
-# protein change -> SNVs that cause it, for datasets without genomic coordinates (DMS, protein-only clinical sets).
-# Built once by build_snv_index.py from AlphaMissense_hg38.tsv.gz (all possible missense SNVs of UniProt canonical
-# isoforms, GENCODE v32 canonical transcripts).
-path = "/no_backup/diasfrazer/egalpern_pgb_clinical/layers/am_hg38_snv_index.parquet"
+[alphamissense]
+# AlphaMissense (Cheng et al., Science 2023), official hg38 table: every possible missense SNV of the canonical
+# transcript (GENCODE v32) of every UniProt canonical isoform (UniProt 2021_02), with am_pathogenicity.
+# Zenodo 10.5281/zenodo.8208688, licence CC BY-NC-SA 4.0 (non-commercial). README in /no_backup/diasfrazer/db/alphamissense.
+# `table` is built once from `source` by build_snv_index.py (parquet sorted by UniProt accession). It is both the
+# AlphaMissense score source (looked up by UniProt accession + GRCh38 SNV, else by protein change) and the SNV index
+# (protein change -> causing SNVs) for SNV-level scores of variants given only as protein changes.
+table = "/no_backup/diasfrazer/egalpern_pgb_clinical/layers/alphamissense_hg38.parquet"
 source = "/no_backup/diasfrazer/db/alphamissense/raw/AlphaMissense_hg38.tsv.gz"
+version = "AlphaMissense hg38 canonical (Zenodo 10.5281/zenodo.8208688, CC BY-NC-SA 4.0)"
+
+[popeve]
+# popEVE v1.1 (Orenbuch, Kollasch et al.), UK Biobank build 2025-03-12, licence CC BY 4.0. One CSV per RefSeq
+# protein (NP_xxx.y.csv) inside the zip, with protein-level `mutant` and `popEVE` (more negative = more deleterious).
+# Read straight from the zip (no unpacking). UniProt -> RefSeq via the `DR RefSeq` lines of [uniprot] (local; no
+# REST id mapping); the RefSeq sequence is rebuilt from the wild-type letters of `mutant` and, if it differs from the
+# UniProt canonical sequence, positions are mapped by alignment. README in /no_backup/diasfrazer/db/popeve.
+zip = "/no_backup/diasfrazer/db/popeve/raw/popEVE_ukbb_20250312.zip"
+score = "popEVE"
+version = "popEVE v1.1 (UKBB 2025-03-12, CC BY 4.0)"
 
 [uniprot]
 # full-length canonical sequences for protein_length and for placing the archive wild type on UniProt numbering

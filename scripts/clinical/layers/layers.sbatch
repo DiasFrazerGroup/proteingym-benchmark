@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Add the annotation layers to every archive (*.pgdata, *.pgarchive) in IN_DIR, writing OUT_DIR. Cluster job; submit
-# from the repo root (or pass --chdir=<repo>). Builds the AlphaMissense SNV index first if it does not exist yet.
+# from the repo root (or pass --chdir=<repo>). Builds the AlphaMissense parquet (score table + SNV index) first if it does not exist yet.
 # Usage: sbatch -p genoa64 --qos=short -t 04:00:00 -c 4 --mem=48G \
 #          scripts/clinical/layers/layers.sbatch IN_DIR OUT_DIR [extra add_layers.py args]
 set -euo pipefail
@@ -8,7 +8,7 @@ shopt -s nullglob
 IN=$1; OUT=$2; shift 2
 PY=${PY:-/users/diasfrazer/egalpern/project/proteingym_clinical/env/bin/python}
 D=scripts/clinical/layers
-IDX=$("$PY" -c "import tomllib;print(tomllib.load(open('$D/sources.toml','rb'))['snv_index']['path'])")
+IDX=$("$PY" -c "import tomllib;print(tomllib.load(open('$D/sources.toml','rb'))['alphamissense']['table'])")
 [ -f "$IDX" ] || "$PY" "$D/build_snv_index.py" --sources "$D/sources.toml"
 files=("$IN"/*.pgdata "$IN"/*.pgarchive)
 [ ${#files[@]} -gt 0 ] || { echo "no archives in $IN"; exit 1; }
