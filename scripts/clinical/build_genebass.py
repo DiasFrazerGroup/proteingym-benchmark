@@ -14,13 +14,15 @@ Fig. 6b selection, exactly as DJZN25-Fig6.ipynb cells 23-24 (on all variant rows
   1. pairs with missense SKAT-O P <= 1e-10 (Genebass gene-level result, top-hits table)
   2. variants with single-variant P < 0.05
   3. pairs with > 25 variants left
--> 103 pairs, 61 proteins, 6,977 variant rows; every row is then mapped onto a UniProt wild type:
+-> 103 pairs, 61 proteins, 6,977 variant rows on the paper's tables (more on Genebass's own: --hits/--betas);
+   pairs and rows of the paper's exact set are flagged `in_vesm_paper` (index column, assay non-target). Every row is then mapped onto a UniProt wild type:
   - the paper's own mapping (scores table: uniprot_id, uniprot_mut, Sequence), wild-type residue checked;
   - otherwise (UGT1A5 only: the paper gives no UniProt mapping, its hgvsp uses ENSP00000303174, 2 residues
     shorter at the N-terminus) the gene's Swiss-Prot entry, at the single position offset under which every
     variant's wild-type residue matches. Recorded per row in the `mapping` non-target.
-Evaluation (not here): per pair, Pearson r(beta, score) and its two-sided P; Fig. 6b top = mean -log10 P over all
-103 pairs, bottom = mean per biomarker group (the paper's heatmap shows Lipid / Liver / Renal; the 16 "Other"
+Evaluation (not here): per pair, Pearson r(beta, score) and its two-sided P; headline = mean -log10 P over all
+archives and all rows (Genebass-sourced: 109 pairs); the paper's Fig. 6b exactly = archives and rows with
+in_vesm_paper (103 pairs). Top = overall mean, bottom = mean per biomarker group (the paper's heatmap shows Lipid / Liver / Renal; the 16 "Other"
 pairs count only in the overall mean).
 
 Inputs (all public):
@@ -53,7 +55,7 @@ AA3 = {"ALA": "A", "ARG": "R", "ASN": "N", "ASP": "D", "CYS": "C", "GLN": "Q", "
        "ILE": "I", "LEU": "L", "LYS": "K", "MET": "M", "PHE": "F", "PRO": "P", "SER": "S", "THR": "T", "TRP": "W",
        "TYR": "Y", "VAL": "V"}
 NON_TARGETS = ["mutant", "pval", "allele_count", "allele_number", "allele_frequency", "variant_id", "hgvsp",
-               "mapping"]
+               "mapping", "in_vesm_paper"]
 GENEBASS_DOI = "10.1016/j.xgen.2022.100168"
 VESM_DOI = "10.1101/2025.03.09.642148"
 AA3P = {k.capitalize(): v for k, v in AA3.items()}
@@ -198,6 +200,18 @@ def main():
     n = var.groupby("gene_pheno").hgvsp.count()
     var = var[var.gene_pheno.isin(n[n > NVAR].index)].copy()
 
+    # --- the paper's exact Fig. 6b set (same selection on the paper's own tables), to flag pairs and rows -------
+    # Headline evaluation uses every pair and row; in_vesm_paper (index column and assay non-target) recovers the
+    # paper's set exactly: archives with in_vesm_paper, and within them the rows with in_vesm_paper.
+    ph = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits.csv")
+    pb = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits_all_variants_betas.csv.gz")
+    pb = pb[pb.gene_pheno.isin(ph.loc[ph.pval_mis <= PVAL_MIS, "gene_pheno"]) & (pb.pval < PVAL_VAR)]
+    k = pb.groupby("gene_pheno").hgvsp.count()
+    pb = pb[pb.gene_pheno.isin(k[k > NVAR].index)]
+    paper_rows = set(zip(pb.gene_pheno, pb.variant_id))
+    paper_pairs = set(pb.gene_pheno)
+    var["in_vesm_paper"] = [x in paper_rows for x in zip(var.gene_pheno, var.variant_id)]
+
     # --- map every selected row onto a UniProt wild type ---------------------------------------------------------
     var = var.merge(sc[["variant_id", "hgvsp", "gene", "uniprot_id", "uniprot_mut"]],
                     on=["variant_id", "hgvsp", "gene"], how="left", validate="many_to_one")
@@ -338,6 +352,8 @@ def main():
         out = KFoldSplitter(2).split(ds, targets=["beta"]).dump(path=splits)
         rows.append(dict(dataset=name, gene=p.gene, uniprot_id=u, entry_name=pr["entry_name"],
                          phenotype=p.phenotype, phenotype_code=int(p.phenotype_code), biomarker_group=group,
+                         in_vesm_paper=p.gene_pheno in paper_pairs,
+                         n_variants_vesm_paper=int(assay.in_vesm_paper.sum()),
                          genebass_analysis_id=p.analysis_id, gene_pheno=p.gene_pheno,
                          skato_pval_missense=p.pval_mis, burden_beta_missense=p.beta_mis,
                          skato_pval_plof=p.pval_plof, burden_beta_plof=p.beta_plof, seq_length=pr["length"],
@@ -350,6 +366,9 @@ def main():
 
     idx = pd.DataFrame(rows)
     idx.to_csv(a.out / "genebass_fig6b.csv", index=False)
+    pp = idx[idx.in_vesm_paper]
+    print(f"paper set (in_vesm_paper): {len(pp)} of {len(idx)} archives, {pp.n_variants_vesm_paper.sum():,} rows "
+          f"(paper: {len(paper_pairs)} pairs, {len(paper_rows):,} rows)")
     print(f"\n{len(idx)} archives, {idx.uniprot_id.nunique()} proteins, {idx.n_variants.sum():,} variant rows; "
           f"groups {idx.biomarker_group.value_counts().to_dict()}; "
           f"wild type != Swiss-Prot 2026_03: {(~idx.drop_duplicates('uniprot_id').wt_equals_sprot_2026_03).sum()}")

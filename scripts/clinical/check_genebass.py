@@ -35,11 +35,14 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--fig6", type=Path, required=True)
     ap.add_argument("--out", type=Path, default=Path("datasets/clinical/genebass"))
-    ap.add_argument("--paper-rows-only", action="store_true",
-                    help="restrict to the paper's Fig. 6b pairs and the paper's own variant rows (joined on "
-                         "variant_id): the exact-reproduction test for archives built from Genebass (genebass_api)")
+    ap.add_argument("--paper-set", "--paper-rows-only", dest="paper_rows_only", action="store_true",
+                    help="restrict to the paper's exact Fig. 6b set using only the archives' own in_vesm_paper flags "
+                         "(index column, assay non-target), then require those rows to be exactly the paper's: the "
+                         "exact-reproduction test for archives built from Genebass (genebass_api)")
     a = ap.parse_args()
     idx = pd.read_csv(a.out / "genebass_fig6b.csv")
+    if a.paper_rows_only:
+        print(f"paper set from flags: {int(idx.in_vesm_paper.sum())} of {len(idx)} archives")
     bet = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits_all_variants_betas.csv.gz")
     hits = pd.read_csv(a.fig6 / "GeneBass_BiochemAssays_top_hits.csv")
 
@@ -54,8 +57,10 @@ def main():
 
     rows, n_avg, missing = [], [], []
     paper_pairs = set(b.gene_pheno)
+    if a.paper_rows_only:
+        assert set(idx.loc[idx.in_vesm_paper, "gene_pheno"]) == paper_pairs, "in_vesm_paper pairs != paper's pairs"
     for r in idx.itertuples():
-        if a.paper_rows_only and r.gene_pheno not in paper_pairs:
+        if a.paper_rows_only and not r.in_vesm_paper:
             continue
         ds = Subsets.from_path(a.out / r.archive).dataset
         assert len(ds.assays) == 1 and ds.name == r.dataset
@@ -66,8 +71,10 @@ def main():
         if a.paper_rows_only:
             ref = b.loc[b.gene_pheno == r.gene_pheno, ["variant_id"] + MODELS]
             n_arch = len(df)
+            df = df[df.in_vesm_paper.astype(str) == "True"]                # the archive's own flag, no paper files
+            assert len(df) == r.n_variants_vesm_paper
             df = df.merge(ref, on="variant_id", how="inner", validate="one_to_one")
-            assert len(df) == len(ref), (r.dataset, len(df), len(ref))      # every paper row is in the archive
+            assert len(df) == len(ref) == r.n_variants_vesm_paper, (r.dataset, len(df), len(ref))  # flags == paper
             if n_arch != len(df):
                 missing.append((r.dataset, f"{n_arch - len(df)} extra Genebass rows ignored"))
         else:

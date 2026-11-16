@@ -106,6 +106,7 @@ codons), as in the paper.
 | `pval`, `allele_count`, `allele_number`, `allele_frequency` | association | Genebass single-variant P; cohort allele counts |
 | `variant_id`, `hgvsp` | id | GRCh38 `chr-pos-ref-alt`; Ensembl protein HGVS |
 | `mapping` | provenance | how the variant was placed on UniProt |
+| `in_vesm_paper` | subset flag | row is in the paper's exact Fig. 6b set (same pair and SNV); `False` for rows only Genebass has |
 | `uniprot_pos` | layer | UniProt position(s) |
 | `mask_plddt`, `mask_plddt_source`, `mask_protein_length` | mask layer | pLDDT of the site (AFDB v6, see below); full canonical length |
 | `score_alphamissense`, `score_popeve`, `score_cadd_phred`, `score_snv_source` | score layer | from dbNSFP 5.3.1a for the row's SNV; PrimateAI-3D once the licensed file is available |
@@ -115,8 +116,8 @@ codons), as in the paper.
 - **Assay variables:** `phenotype_code` (UK Biobank field) and `biomarker_group`.
 - **Wild type:** the paper's UniProt sequence, or Swiss-Prot 2026_03 for proteins the paper does not map. The APOB
   wild type differs from Swiss-Prot at Y1422C.
-- **Structures:** AlphaFold DB v6, each with its residue span. **Not yet** the PG2 protocol (AF2 with default
-  settings).
+- **Structures:** AlphaFold DB v6, each with its residue span; proteins over 2,700 aa (APOB, LRP2, PKD1) come as
+  their AFDB fragments F1..Fn. Decided 2026-11-16: keep AFDB v6 with fragments, no AF2 re-folding.
 - **MSA:** the PG2 protocol, ColabFold on UniRef100 2026_01 with no post-alignment filtering. This is the
   `colabfold_search` monomer search with filtering off. Because UniRef100 is not clustered there is no cluster
   expansion, no environmental database, and the hit limit is raised to 1M. Depths reach 1.16M sequences.
@@ -124,7 +125,15 @@ codons), as in the paper.
 ### Index file
 
 `genebass_fig6b.csv` has one row per archive: pair, gene, UniProt ID, phenotype, group, Genebass gene-level results
-(missense and pLoF SKAT-O P, burden betas), counts, structures and MSA depth.
+(missense and pLoF SKAT-O P, burden betas), counts, structures and MSA depth. `in_vesm_paper` marks the paper's
+103 pairs and `n_variants_vesm_paper` counts their paper rows.
+
+### Headline set and the paper's exact set
+
+Decided 2026-11-16: the **headline metric uses every archive and every row** (109 pairs, Genebass-sourced). The
+paper's Fig. 6b set is recovered from the data alone, without the paper's files: archives with `in_vesm_paper`
+in the index, and within them the rows with `in_vesm_paper`. `check_genebass.py --paper-set` does exactly that and
+must print `REPRODUCED`; the evaluation stage should offer the same switch.
 
 ### Caveats
 
@@ -140,8 +149,9 @@ codons), as in the paper.
 |---|---|
 | Genebass tables + comparison | `$WORK/genebass_api/{genebass_api_hits.csv, genebass_api_betas.csv.gz, compare_vs_paper.md}` |
 | Archives, no MSA (Genebass source) | `$WORK/genebass_api/build/splits/`, with layers in `splits_layers/` |
-| **Final archives** (Genebass source, MSAs, layers) | `$WORK/genebass/splits_layers/`, from rebuild job 31809884 (running) |
-| MSAs (61 proteins, 38 GB) | `$WORK/genebass_msas/` |
+| **Final archives** (Genebass source, MSAs, layers, `in_vesm_paper` flags) | `$WORK/genebass/splits_layers/` (compressed, 6.6 GB), from rebuild job 31919891 |
+| Same archives without layers, uncompressed | `$WORK/genebass/splits/` (63 GB; delete once the paper-set check passes) |
+| MSAs (66 proteins, 40 GB) | `$WORK/genebass_msas/` |
 | Earlier paper-sourced archives (superseded) | `datasets/clinical/genebass/splits/` (repo, git-ignored), `$WORK/genebass_nomsa_layers/` |
 
 `WORK=/no_backup/diasfrazer/egalpern_pgb_clinical`.
@@ -158,9 +168,8 @@ The `.sbatch` wrappers run each step on genoa64.
 
 ## Open
 
-- **MSAs for the 5 new proteins** (CST3, GPLD1, GPT, SHBG, SLC22A12; 146–840 aa): they weren't in the searched set, so their
-  archives are built without an MSA. A short search job would fill them in.
-- **Structures:** switch to the PG2 protocol, AF2 with default settings, including a fragment rule above 2,700 aa.
-- **Extra pairs:** whether the 6 Genebass-only pairs enter the headline benchmark or stay a flagged extension
-  (`in_vesm_paper`).
-- **PrimateAI-3D:** needs the licensed file from Illumina.
+- **PrimateAI-3D:** not for now (decided 2026-11-16); would need the licensed file from Illumina.
+- **Hosting and licences** of the archives and score layers (see Caveats).
+
+Done since: MSAs for the 5 new proteins (CST3, GPLD1, GPT, SHBG, SLC22A12; job 31810198); headline set and
+`in_vesm_paper` flags; structures kept as AFDB v6 with fragments.

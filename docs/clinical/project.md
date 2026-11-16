@@ -72,8 +72,8 @@ Clinical archives live apart from the DMS ones (`datasets/clinical/`), so the DM
 - **Wild type:** canonical UniProt.
 - **MSA:** ColabFold on UniRef100 (January 2026), no post-alignment filtering. PG2's second, jackhmmer MSA is left
   out.
-- **Structure:** AlphaFold2 with default settings, with a fragment rule for proteins too long to fold in one piece.
-  The current archives use AlphaFold DB v6 until this is done.
+- **Structure:** AlphaFold DB v6 (AlphaFold2 models); proteins over 2,700 aa as their AFDB fragments, each with its
+  residue span. Decided 2026-11-16 instead of re-folding with AF2.
 
 **Variant identity.** Every row carries:
 
@@ -122,10 +122,10 @@ Rules:
 
 ## 6. Milestones
 
-1. **Genebass data (done, final rebuild running):** 109 archives from Genebass, reproducing VESM Fig. 6b on the
-   paper's rows; MSAs; layers.
-2. **Genebass inputs complete:** MSAs for the 5 added proteins; AF2 (PG2 protocol) structures with a long-protein
-   fragment rule.
+1. **Genebass data (done):** 109 archives from Genebass, all with MSAs and layers; headline = all pairs, the
+   paper's exact Fig. 6b set recoverable through `in_vesm_paper` flags (reproduces the paper).
+2. **Genebass inputs complete (done):** MSAs for the 5 added proteins; structures stay AFDB v6 with fragments for
+   proteins over 2,700 aa (decided 2026-11-16, no AF2 re-folding).
 3. **Model API for long proteins and sparse variants:** all zoo models scoring the Genebass archives, with
    validations.
 4. **Clinical evaluation stage:** Fig. 6b metrics in the repo (Pearson; plus Spearman and per-gene variants), first
@@ -136,12 +136,10 @@ Rules:
 
 ## 7. Open decisions
 
-- **Genebass:** whether the 6 Genebass-only pairs enter the headline metric or stay a flagged extension.
 - **ClinVar:** curation (review stars, conflicting interpretations) and avoiding circularity with predictors trained
   on ClinVar.
 - **De novo variants:** which case and control cohorts; handling of variants seen in both.
 - **Metrics:** Pearson (paper) vs Spearman; per pair vs per gene; weighted alternatives (inverse-variance).
-- **Structures:** the exact AF2 setup and the fragment rule above about 2,700 aa.
 - **MSAs:** confirming the ColabFold-on-UniRef100 recipe with the PG2 builders; region policy for long proteins.
 - **Hosting and licences:** private vs public Hugging Face; how to ship score layers with non-commercial or
   no-redistribution terms (PrimateAI-3D).
