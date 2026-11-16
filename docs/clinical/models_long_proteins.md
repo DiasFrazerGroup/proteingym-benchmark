@@ -148,22 +148,53 @@ not inspected are marked [inferred]). N = MSA depth (up to 1.16M), L = length, q
 - **RSALOR, StructureDCA:** need one full-length single-chain structure, which AFDB does not provide above 2,700 aa;
   positions without RSA score as WT.
 
-**Solution to implement (region models):**
-1. A region step between `dataset_to_evedesign` and `build`: crop the wild type, the MSA match columns (after
-   `remove_inserts`), any weights and the structure (renumbered) to a region [s, e) around the variants; set
-   `first_index = s+1`; crop the instances. The query still equals the cropped wild type, so all query checks pass,
-   and every model indexes instances by array position, so cropping instances is enough.
-2. Inside each region: drop rows that are mostly gaps in the region, then cap depth by random sampling, then compute
-   (or supply) sequence weights once per region. Supplying `msa_weights` skips in-model weighting for EVE and
-   EVmutation.
-3. Regions: windows of a few hundred residues (size per model, set by memory: L²·q² for EVmutation), most-central
-   region per variant (same rule as the PLM windows); for structure-needing models, the region must lie inside one
-   AFDB fragment.
-4. Positions a model cannot score → **NaN**, never 0/WT: patch EVmutation (excluded columns), RSALOR (no RSA) and
-   GEMME (NA cells) wrappers to return NaN, and catch per-protein failures in the runner so one protein does not
-   lose the dataset.
-5. Test T5 first on APOB, LRP2, PKD1 and one mid-size protein: memory, time, coverage, and region vs full length on
-   a protein where full length fits.
+**What was built: region archives (2026-11-16, `scripts/clinical/models/regions/`).** The six models stay
+unchanged; a preprocessing step turns one protein into small archives they can score, and the scores are mapped
+back.
+
+1. **`make_regions.py`** (local env with proteingym-base; `make_regions.sbatch <UNIPROT> <W>...`): all archives of
+   one UniProt entry are pooled (variants as unique mutants, so several phenotype archives of a protein share one
+   model fit). Output `$WORK/models/regions/archives/<UNIPROT>/W<W>/`: one `<UNIPROT>_r<s>-<e>.splits.pgdata` per
+   region, `regions.json` (spans, MSA depths, structure, EVmutation-excluded columns), `variants.csv` (UniProt
+   mutant -> region, region mutant), `rows.csv` (original archive rows).
+   - **Regions:** tiles of W residues every W/2 (last tile shifted to end at L; W >= L gives one full-length
+     region); each mutant goes to the tile where it is most central (`tiles`/most-central rule of `esm-if1_window`);
+     only tiles with variants are written.
+   - **MSA:** the archive's a3m is streamed once for all regions (bytes, no Python objects per sequence): lowercase
+     insertions dropped (`bytes.translate`), match columns [s, e), rows with < `--min-cov` (0.5) non-gap residues
+     in the region dropped, duplicates dropped (hash set), query first, then a uniform reservoir sample of
+     `--max-depth` (50,000, query included) rows with a fixed seed. Depth total / covering / unique / kept recorded.
+     B/Z/U/O/J become X.
+   - **Structure:** every AFDB fragment placed on the wild type with `fragments.place` (the `saprot_window` module,
+     loaded by path); the region gets the fragment that fully contains it and in which the region centre is most
+     central, cropped to [s, e) and renumbered 1..W (chain A). Mismatches to the wild type and missing residues are
+     recorded. No containing fragment -> no structure in the region archive (cannot happen for W <= 1,200 with
+     AFDB's 1,400/200 fragments).
+   - **Assay:** cropped sequences, `mutant` renumbered (position - s), `uniprot_mutant` kept; target column = the
+     first archive's value (unused by zero-shot models, needed by the format). Written with proteingym-base
+     (`Dataset.from_manifest` -> `Subsets(slices={}).dump`).
+2. **`run_regions.py`** (inside the model's image, `run_regions.sbatch <model> <tag> <UNIPROT>/W<W> ...`, one
+   container start for many regions): the zoo runner's own steps (`Subsets.from_path` -> `dataset_to_evedesign`
+   -> card `model_class(**hyper_parameters)` -> `build` -> `score`), plus
+   - the region wild type is scored with the variants and **pred = score(variant) - score(WT)**: eve (ELBO),
+     evmutation (Hamiltonian), evmutation2 (log-likelihood) and structuredca (-energy) return absolute sequence
+     scores whose offset differs between regions; gemme and rsalor are WT-relative already (score(WT) = 0);
+   - **unscored flags** (become NaN, never WT/0): a mutated position outside `model.positions()` (evmutation:
+     columns with unweighted gap fraction > 0.5 over the region MSA; eve: non-focus columns, none with the card's
+     `threshold_focus_cols_frac_gaps = 1.0`), or a NaN cell of the model's per-position matrix `_pssm` at
+     (position, mutant aa) (rsalor: no RSA at the position; gemme: NA cell from pred.R). The wrappers would add 0
+     for all of these;
+   - per-region `try/except`: a failed region is logged (`status.jsonl`, `<region>.error.log`) and the others are
+     scored; per-region wall time and peak RSS (self and child processes: plmc, R, java) are recorded.
+   Card hyper-parameters can be overridden with `HP='{...}'` (only used where stated).
+3. **`collect_regions.py`** (local env): maps region predictions back to UniProt mutants (NaN for unscored or
+   failed regions, with the reason), checks the evmutation flag against the gap rule recomputed from the region
+   MSA, writes the T5 summary (`summary`), region-vs-full comparisons (`compare`) and the Genebass export
+   (`export` -> `proteingym_clinical/genebass/predictions/v2__<model>/<UNIPROT>.csv`, `mutant,pred`, NaN rows
+   dropped = missing for that model).
+
+Plumbing check (local, APOA1): one full-length region with `--min-cov 0` scored by rsalor equals the unchanged
+model on the original archive (max abs diff 0.0; rsalor drops duplicates itself).
 
 ## 4. Validation protocol
 
@@ -298,6 +329,13 @@ All four ported models now cover every pair (the prototype missed CST3, GPLD1 an
 are not ported yet (PottsMPNN needs the fragment logic; BLOSUM62 needs nothing).
 
 ## 10. Picking this up
+
+**Progress note (T5, alignment models; keep updated):** region code committed (`scripts/clinical/models/regions/`,
+§3.4). Region archives built for APOB, LRP2, PKD1 (W 500, 1,000) and PCSK9 (W 250, 500, full) in
+`$WORK/models/regions/archives/`. T5 jobs running (job IDs in `$WORK/logs/jobs.txt`, lines `run_regions ...`):
+rsalor, structuredca, evmutation on all four; eve timing test on one PCSK9 region (GPU). evmutation2 image
+rebuilding (job 31923694), gemme image blocked (lcqb.upmc.fr download server gives empty replies). Results ->
+`collect_regions.py summary --models ... --tag t5`.
 
 State on 2026-11-16 (evening):
 - **Done, validated (T1–T3), benchmarked:** `esm2_window`, `esmc_window`, `saprot_window`, `esm-if1_window`
