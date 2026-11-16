@@ -109,7 +109,9 @@ codons), as in the paper.
 | `in_vesm_paper` | subset flag | row is in the paper's exact Fig. 6b set (same pair and SNV); `False` for rows only Genebass has |
 | `uniprot_pos` | layer | UniProt position(s) |
 | `mask_plddt`, `mask_plddt_source`, `mask_protein_length` | mask layer | pLDDT of the site (AFDB v6, see below); full canonical length |
-| `score_alphamissense`, `score_popeve`, `score_cadd_phred`, `score_snv_source` | score layer | from dbNSFP 5.3.1a for the row's SNV; PrimateAI-3D once the licensed file is available |
+| `score_alphamissense`, `score_alphamissense_source` | score layer | AlphaMissense hg38 table (Zenodo 10.5281/zenodo.8208688) by UniProt + the row's SNV, else by protein change |
+| `score_popeve` | score layer | popEVE v1.1 (UKBB 2025-03-12) for the UniProt entry's RefSeq protein (from Swiss-Prot DR lines; NP used is in the column description) |
+| `score_cadd_phred`, `score_snv_source` | score layer | CADD from dbNSFP 5.3.1a for the row's SNV; PrimateAI-3D once the licensed file is available |
 
 ### Manifest and inputs
 
@@ -139,6 +141,10 @@ must print `REPRODUCED`; the evaluation stage should offer the same switch.
 
 - **pLDDT:** proteingym-base sets structure B-factors to 0 inside archives, so pLDDT is read from the original AFDB
   files.
+- **Score layer sources:** AlphaMissense and popEVE are read from their own complete releases, not dbNSFP. The
+  dbNSFP per-transcript fields left 17% of rows without AlphaMissense (17 proteins with none) and 54% without popEVE;
+  see [scripts/clinical/layers/README.md](../../scripts/clinical/layers/README.md) and the coverage numbers in
+  [layers_sources_progress.md](layers_sources_progress.md).
 - **Licences:** popEVE is CC BY 4.0. AlphaMissense is CC BY-NC-SA 4.0. CADD and dbNSFP are for non-commercial use.
   PrimateAI-3D cannot be redistributed. The score columns therefore need a licence decision before any public
   release.

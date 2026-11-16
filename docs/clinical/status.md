@@ -33,7 +33,7 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
   recovered: portal top pLoF list on the paper's 27 phenotypes.
 - [x] **MSAs, PG2 protocol** (ColabFold on UniRef100 2026_01, no post-alignment filtering) for the 61 paper
   proteins: 4 h 24 min on 64 CPUs, 38 GB.
-- [x] **Annotation layers** for any archive: AlphaMissense, popEVE and CADD (dbNSFP 5.3.1a); pLDDT, full length and
+- [x] **Annotation layers** for any archive: AlphaMissense (its hg38 table), popEVE (v1.1 release zip) and CADD (dbNSFP 5.3.1a); pLDDT, full length and
   UniProt positions. Validated against the paper, AlphaMissense's own tables and raw AFDB files.
 - [x] **Reports:** [genebass.md](genebass.md), [long_proteins.md](long_proteins.md), this file. The project overview is in
   [project.md](project.md).
