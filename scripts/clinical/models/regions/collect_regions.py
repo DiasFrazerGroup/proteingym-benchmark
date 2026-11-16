@@ -116,7 +116,10 @@ def export(model, tag, w, dest):
 
 
 def main():
+    global ARCH, PREDS
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    ap.add_argument("--arch", type=Path, default=ARCH, help="region archive root (make_regions --out)")
+    ap.add_argument("--preds", type=Path, default=PREDS, help="prediction root (run_regions.sbatch OUT/../..)")
     sp = ap.add_subparsers(dest="cmd", required=True)
     s = sp.add_parser("summary")
     s.add_argument("--models", nargs="+", required=True)
@@ -133,6 +136,7 @@ def main():
     e.add_argument("--window", type=int, required=True)
     e.add_argument("--dest", type=Path)
     a = ap.parse_args()
+    ARCH, PREDS = a.arch, a.preds
     if a.cmd == "summary":
         summary(a.models, a.tag, a.out)
     elif a.cmd == "compare":

@@ -6,7 +6,7 @@ For a protein (all archives of one UniProt entry, variants pooled as unique muta
   L <= W). Each variant goes to the tile where it is most central (largest distance to the tile ends; same rule as
   the PLM windows and the structure fragments). Only tiles with variants are written.
 - MSA: the archive's a3m is streamed once (never held as Python objects): lowercase insertions dropped, match
-  columns [s, e) taken, rows with < `min_cov` non-gap residues in the region dropped, duplicates dropped, query
+  columns [s, e) taken, rows with < `min_cov` standard residues (not gap, not X) in the region dropped, duplicates dropped, query
   first, then a uniform random sample (reservoir, fixed seed) of at most `max_depth` rows. Depths recorded.
 - Structure: the AFDB fragment that fully contains the region and in which the region centre is most central
   (fragments.place puts every fragment on the wild type), cropped to the region and renumbered 1..W. If no
@@ -151,7 +151,9 @@ def region_msas(records, wt: str, regions: list[tuple[int, int]], min_cov: float
             continue
         for (a, b), s in zip(regions, st):
             seg = row[a:b]
-            if (b - a) - seg.count(b"-") < s["min_res"]:
+            # coverage = standard amino acids only: rows of gaps + X (seen in PKD1) have no aligned residue for
+            # rsalor/structuredca (division by zero in their identity filter)
+            if len(seg.translate(None, b"-X")) < s["min_res"]:
                 continue
             s["n_cov"] += 1
             h = hash(seg)
@@ -266,7 +268,7 @@ def main():
     ap.add_argument("--out", type=Path, default=WORK / "models/regions/archives")
     ap.add_argument("--archive-dir", type=Path, default=WORK / "genebass/splits_layers")
     ap.add_argument("--index", type=Path, default=INDEX)
-    ap.add_argument("--min-cov", type=float, default=0.5, help="min non-gap fraction of a row in the region")
+    ap.add_argument("--min-cov", type=float, default=0.5, help="min fraction of standard residues (not gap/X) of a row in the region")
     ap.add_argument("--max-depth", type=int, default=50000, help="random depth cap (query included)")
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--tmp", type=Path, default=None)

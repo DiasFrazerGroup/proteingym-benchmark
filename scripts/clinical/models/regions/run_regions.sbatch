@@ -29,5 +29,5 @@ export OMP_NUM_THREADS=${SLURM_CPUS_PER_TASK:-8} NUMBA_NUM_THREADS=${SLURM_CPUS_
 apptainer exec $NV --cleanenv --env OMP_NUM_THREADS=$OMP_NUM_THREADS,NUMBA_NUM_THREADS=$NUMBA_NUM_THREADS \
   --bind "$REPO/scripts/clinical/models/regions:/scripts:ro" --bind "$ARCH:/arch:ro" --bind "$OUT:/out" \
   "$IMG/$M.sif" bash -c "cd \$(mktemp -d) && /opt/program/.venv/bin/python -u /scripts/run_regions.py /opt/program/README.md /out ${IN[*]}" 2>&1 \
-  | grep --line-buffered -v "UserWarning\|warnings.warn\|it/s\]$"
+  | grep --line-buffered -v "UserWarning\|warnings.warn\|it/s\]$\| | INFO \|SyntaxWarning\|invalid escape"
 echo "RUN REGIONS DONE"
