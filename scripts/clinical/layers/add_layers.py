@@ -4,7 +4,7 @@ Layers are extra non-target columns on every assay row, for comparison and for m
 model inputs or targets.
 
   scores  (external predictors, as published, per variant; empty for multi-mutants or when not covered)
-    score_alphamissense   AlphaMissense pathogenicity, 0-1, higher = more pathogenic  [AlphaMissense hg38 table]
+    score_alphamissense   AlphaMissense pathogenicity, 0-1, higher = more pathogenic  [AlphaMissense tables]
     score_alphamissense_source  snv (UniProt + the row's GRCh38 SNV) | protein (UniProt + protein change) | none
     score_popeve          popEVE, more negative = more deleterious               [popEVE v1.1 zip, per RefSeq protein]
     score_cadd_phred      CADD PHRED-scaled, higher = more deleterious                         [dbNSFP]
@@ -24,10 +24,10 @@ substring, or global alignment), so DMS archives on a domain still get UniProt p
 If the row has a GRCh38 SNV column (default `variant_id`, e.g. 2-21041028-G-A), SNV-level scores use that exact SNV.
 
 Each score comes from its own complete release (paths and versions in sources.toml):
-  AlphaMissense  the official hg38 table (canonical isoforms), as a parquet sorted by UniProt (build_snv_index.py);
-                 looked up by (UniProt, SNV), else by (UniProt, protein change). Its sequence is rebuilt from the
-                 wild-type letters of protein_variant and placed on the current UniProt sequence by alignment if it
-                 differs.
+  AlphaMissense  the official canonical-isoform tables as parquets sorted by UniProt (build_snv_index.py): by
+                 (UniProt, SNV) from the hg38 table, else by (UniProt, protein change) from the aa_substitutions
+                 table. Its sequence is rebuilt from the wild-type letters of protein_variant and placed on the
+                 current UniProt sequence by alignment if it differs.
   popEVE         the v1.1 zip, one CSV per RefSeq protein, read in place. UniProt -> RefSeq from Swiss-Prot DR
                  lines (displayed isoform first); the RefSeq sequence (from `mutant`) is checked against UniProt and
                  positions mapped by alignment if it differs. The RefSeq used is in the column description and in
@@ -155,23 +155,27 @@ def place(canon, other):
 
 
 class AlphaMissense:
-    """AlphaMissense hg38 table (parquet from build_snv_index.py), per UniProt accession: score by (UniProt, GRCh38
-    SNV), else by protein change (mean over its SNVs; AlphaMissense is protein-level so they agree). Also the SNV
-    index (protein change -> causing SNVs) for SNV-level scores."""
+    """AlphaMissense per UniProt accession, from two parquets (build_snv_index.py): the hg38 table gives the score by
+    (UniProt, GRCh38 SNV) and the SNVs causing each protein change (SNV index); the aa_substitutions table gives the
+    score by (UniProt, protein change) for every substitution, also of proteins without a hg38 transcript."""
 
     def __init__(self, cfg):
-        self.path = cfg["alphamissense"]["table"]
+        c = cfg["alphamissense"]
+        self.table, self.protein_table = c["table"], c["protein_table"]
         self.cache = {}
 
     def protein(self, uniprot, canon):
         if uniprot not in self.cache:
-            t = pads.dataset(self.path).to_table(filter=pads.field("uniprot_id") == uniprot).to_pandas()
-            seq = sequence_from_mutants(t.protein_variant.unique())
+            t = pads.dataset(self.table).to_table(filter=pads.field("uniprot_id") == uniprot).to_pandas()
+            q = pads.dataset(self.protein_table).to_table(filter=pads.field("uniprot_id") == uniprot).to_pandas()
+            seq = sequence_from_mutants(q.protein_variant if len(q) else t.protein_variant.unique())
             pos_map, note = place(canon, seq)
             snv = dict(zip(zip(t.chrom, t.pos, t.ref, t.alt), zip(t.protein_variant, t.am_pathogenicity)))
-            by_pv = {pv: (float(g.am_pathogenicity.mean()), list(zip(g.chrom, g.pos, g.ref, g.alt)))
-                     for pv, g in t.groupby("protein_variant")}
-            self.cache = {uniprot: dict(seq=seq, map=pos_map, note=note, snv=snv, pv=by_pv)}   # one protein at a time
+            snvs_of = {pv: list(zip(g.chrom, g.pos, g.ref, g.alt)) for pv, g in t.groupby("protein_variant")}
+            score = (dict(zip(q.protein_variant, q.am_pathogenicity.astype(float))) if len(q) else
+                     t.groupby("protein_variant").am_pathogenicity.mean().astype(float).to_dict())
+            self.cache = {uniprot: dict(seq=seq, map=pos_map, note=note, snv=snv, snvs_of=snvs_of, score=score,
+                                        in_hg38=len(t) > 0)}                                 # one protein at a time
         return self.cache[uniprot]
 
     @staticmethod
@@ -182,7 +186,9 @@ class AlphaMissense:
 
 
 class PopEVE:
-    """popEVE per RefSeq protein, read straight from the release zip; UniProt -> RefSeq via Swiss-Prot DR lines."""
+    """popEVE per RefSeq protein, read straight from the release zip; UniProt -> RefSeq via Swiss-Prot DR lines, or,
+    when none of the listed RefSeq proteins is in the release, by sequence (popEVE sequence index): identical, else a
+    near-identical isoform (>= 90% of canonical positions, >= 98% identity)."""
 
     def __init__(self, cfg, refseq):
         c = cfg["popeve"]
@@ -190,25 +196,56 @@ class PopEVE:
         self.score = c["score"]
         self.members = {Path(n).stem.split(".")[0]: n for n in self.zip.namelist() if n.endswith(".csv")}
         self.refseq = refseq
+        self.seqs = pd.read_parquet(c["sequences"]) if c.get("sequences") else None
         self.cache = {}
+
+    def similar(self, canon, k=12, top=3):
+        """RefSeq proteins of the release by sequence: identical first, else the `top` sharing most k-mers (>= 30%)."""
+        if self.seqs is None:
+            return []
+        same = self.seqs.np[self.seqs.sequence == canon].tolist()
+        if same:
+            return same
+        kmers = {canon[i:i + k] for i in range(len(canon) - k + 1)}
+        hits = []
+        for n, t in zip(self.seqs.np, self.seqs.sequence):
+            if abs(len(t) - len(canon)) <= 0.5 * len(canon):
+                c = sum(t[i:i + k] in kmers for i in range(len(t) - k + 1))
+                if c >= 0.3 * len(canon):
+                    hits.append((c, n))
+        return [n for _, n in sorted(hits, reverse=True)[:top]]
 
     def protein(self, uniprot, canon):
         """-> dict(np, seq, map, note, scores{mutant on RefSeq numbering: score}) or None if no RefSeq in popEVE."""
         if uniprot in self.cache:
             return self.cache[uniprot]
         best = None
-        for np_acc, displayed in self.refseq.get(uniprot, []):
+        cands, by_seq = self.refseq.get(uniprot, []), False
+        if not any(n.split(".")[0] in self.members for n, _ in cands):    # none listed in popEVE: match by sequence
+            cands, by_seq = [(n, True) for n in self.similar(canon)], True
+        for np_acc, displayed in cands:
             name = self.members.get(np_acc.split(".")[0])
             if not name:
                 continue
             d = pd.read_csv(self.zip.open(name), usecols=["mutant", self.score])
             seq = sequence_from_mutants(d.mutant)
             pos_map, note = place(canon, seq)
+            if by_seq and not note.startswith("identical"):
+                # another RefSeq protein than Swiss-Prot lists: accept only a near-identical one (same gene, other
+                # isoform), never a paralog: >= 90% of canonical positions placed with >= 98% identity
+                same = sum(canon[i - 1] == seq[j - 1] for i, j in pos_map.items())
+                if len(pos_map) < 0.9 * len(canon) or same < 0.98 * len(pos_map):
+                    continue
             rank = (note.startswith("identical"), displayed, len(pos_map))
             if best is None or rank > best[0]:
                 used = Path(name).stem
                 if used != np_acc:
                     note += f"; Swiss-Prot lists {np_acc}, popEVE has {used}"
+                if by_seq:
+                    note += ("; none of Swiss-Prot's RefSeq proteins is in popEVE, this one was found by sequence "
+                             "similarity (another isoform)" if not note.startswith("identical") else
+                             "; none of Swiss-Prot's RefSeq proteins is in popEVE, this one was found by identical "
+                             "sequence")
                 best = (rank, dict(np=used, seq=seq, map=pos_map, note=note,
                                    scores=dict(zip(d.mutant, d[self.score].astype(float)))))
         self.cache = {uniprot: best[1] if best and best[1]["map"] else None}               # one protein at a time
@@ -336,8 +373,9 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
     if "scores" in layers and uniprot and canon:
         am_p = scorer["am"].protein(uniprot, canon)
         pe_p = scorer["popeve"].protein(uniprot, canon)
-    am_info = (f"UniProt {uniprot}: AlphaMissense sequence {am_p['note']}" if am_p and am_p["map"] else
-               f"UniProt {uniprot} not in AlphaMissense")
+    am_info = (f"UniProt {uniprot}: AlphaMissense sequence {am_p['note']}"
+               + ("" if am_p["in_hg38"] else "; no hg38 canonical transcript, protein changes only")
+               if am_p and am_p["map"] else f"UniProt {uniprot} not in AlphaMissense")
     pe_info = (f"RefSeq {pe_p['np']} for UniProt {uniprot}: {pe_p['note']}" if pe_p else
                f"no popEVE RefSeq protein for UniProt {uniprot}")
     desc = {
@@ -345,7 +383,7 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
         "score_alphamissense": "AlphaMissense pathogenicity (0-1, higher = more pathogenic), by UniProt + GRCh38 SNV, "
                                f"else by protein change; {cfg['alphamissense']['version']}; {am_info}",
         "score_alphamissense_source": "how the AlphaMissense value was found: snv (UniProt + the row's GRCh38 SNV) | "
-                                      "protein (UniProt + protein change; mean over its SNVs) | none",
+                                      "protein (UniProt + protein change, aa_substitutions table) | none",
         "score_popeve": f"popEVE score (more negative = more deleterious), by protein change; "
                         f"{cfg['popeve']['version']}; {pe_info}",
         "score_cadd_phred": f"CADD PHRED (higher = more deleterious); {cfg['dbnsfp']['version']}",
@@ -385,8 +423,8 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
                 if snv:
                     snvs_of.append([snv])
                     src.append("genomic")
-                elif key and key in am_p["pv"]:
-                    snvs_of.append(am_p["pv"][key][1])
+                elif key and am_p["snvs_of"].get(key):
+                    snvs_of.append(am_p["snvs_of"][key])
                     src.append("protein")
                 else:
                     snvs_of.append([])
@@ -395,8 +433,8 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
                     am.append(float(am_p["snv"][snv][1]))
                     am_src.append("snv")
                     scorer["am_snv_vs_protein"].append((path.name, f"{s[0]}{s[1]}{s[2]}", am_p["snv"][snv][0], key))
-                elif key and key in am_p["pv"]:
-                    am.append(am_p["pv"][key][0])
+                elif key and key in am_p["score"]:
+                    am.append(am_p["score"][key])
                     am_src.append("protein")
                 else:
                     am.append(np.nan)
