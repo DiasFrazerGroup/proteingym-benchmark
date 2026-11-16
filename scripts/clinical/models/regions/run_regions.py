@@ -18,6 +18,7 @@ Writes <out_dir>/<UNIPROT>/W<window>/<region>.csv (region_mutant, uniprot_mutant
 JSON line per region to <out_dir>/status.jsonl (time, peak RSS, error).
 """
 import argparse
+import gc
 import importlib
 import io
 import json
@@ -102,6 +103,7 @@ def main():
         if dst.exists() and not a.redo:
             continue
         t = time.time()
+        model = scored = None
         rec = dict(region=rid, archive=str(f))
         try:
             subsets = Subsets.from_path(f)
@@ -137,6 +139,15 @@ def main():
             rec.update(ok=False, error=f"{type(e).__name__}: {str(e)[:300]}")
             (od / f"{rid}.error.log").write_text(traceback.format_exc())
             print(f"[{time.strftime('%H:%M:%S')}] FAILED {rid} {rec['error']}", flush=True)
+        # free the region model (and GPU memory) before the next region: after a CUDA OOM the traceback keeps the
+        # model alive and every later region fails too (seen with evmutation2 at W 1,000 on a 40 GB slice)
+        model = scored = None
+        gc.collect()
+        if "torch" in sys.modules:
+            try:
+                sys.modules["torch"].cuda.empty_cache()
+            except Exception:
+                pass
         rec["t_total_s"] = round(time.time() - t, 1)
         rec["maxrss_self_gb"], rec["maxrss_children_gb"] = maxrss_gb()
         with open(od / "status.jsonl", "a") as fh:
