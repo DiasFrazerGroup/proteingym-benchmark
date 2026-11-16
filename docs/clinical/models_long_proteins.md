@@ -244,6 +244,10 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 | 2026-11-16 | `esm2_window`, `esmc_window` ported (shared `window.py`, `special_tokens` option) | — | `models/esm*_window/` |
 | 2026-11-16 | T1 esm2_window, 3 short proteins (job 31921230) | max abs diff vs zoo `score_mutants` 4.8e-7: **PASS** | `$WORK/logs/plm_windows_esm2_smoke_31921230.log` |
 | 2026-11-16 | `saprot_window`, `esm-if1_window` ported with `fragments.py` (structure placed on the WT by sequence, most-central structure per position) | APOB: 17 fragments placed at 1, 201, …, 3,201 (identity ≥ 0.9993, Y1422C), no position uncovered (local check) | `models/{saprot,esm-if1}_window/` |
+| 2026-11-16 | T1 saprot_window, 3 short proteins (job 31921437) | max diff vs zoo 6.7e-6: **PASS** | `$WORK/logs/struct_windows_saprot_smoke_31921437.log` |
+| 2026-11-16 | esm2_window full run on 1g.20gb with the card's batch 64 (job 31921334) | CUDA OOM (64 × 1,022-residue windows); rerun with batch 8 (31921955) | — |
+| 2026-11-16 | esm-if1_window smoke (job 31921438) | ImportError: fair-esm imported before the zoo module patches biotite (same bug as the prototype); fixed import order, rerun 31921956 | — |
+| 2026-11-16 | Pending: esm2_window all 66 proteins (31921955), esmc_window windows 1022/2048/full (31921335), saprot_window all proteins incl. fragments (31921957), esm-if1_window smoke (31921956) | — | `$WORK/models/` |
 
 ## 10. Picking this up (handoff, 2026-11-16)
 

@@ -28,6 +28,7 @@ ap.add_argument("card", type=Path)
 ap.add_argument("--out", type=Path, required=True)
 ap.add_argument("--windows", default="")
 ap.add_argument("--limit", type=int, default=0, help="first N proteins only (smoke test)")
+ap.add_argument("--batch-size", type=int, default=16, help="windows per forward pass (L <= 2048)")
 a = ap.parse_args()
 a.out.mkdir(parents=True, exist_ok=True)
 
@@ -67,7 +68,8 @@ for k, (ref, d) in enumerate(sorted(by_prot.items(), key=lambda x: len(x[0]))):
         w_eff = w if w > 0 else 10 ** 7
         col = f"{st}_{w if w > 0 else 'full'}"
         try:
-            m = Cls(window=w_eff, special_tokens=st, **dict(hp, batch_size=hp.get("batch_size", 32) if L <= 2048 else 4))
+            bs = a.batch_size if (L <= 2048 or 0 < w <= 2048) else 2
+            m = Cls(window=w_eff, special_tokens=st, **dict(hp, batch_size=bs))
             m.build(system)
             res[col] = [x.score for x in m.score_mutants(system.rep_to_instance(), muts)]
         except Exception as e:  # e.g. out of memory at full length

@@ -15,6 +15,10 @@ Here:
   zoo score within a protein (same ranking, same Pearson/Spearman per protein).
 Residues that differ between a structure and the wild type are allowed (the zoo raises); the wild type is scored.
 """
+# the zoo module first: it patches biotite (filter_backbone) before fair-esm's inverse_folding imports it
+from .model import ESMIF1  # noqa: I001
+from . import fragments
+
 import numpy as np
 import torch
 import torch.nn.functional as F
@@ -22,9 +26,6 @@ import biotite.structure as struc
 import esm.inverse_folding.util as if_util
 from evedesign.model import assign_scores_to_instances
 from evedesign.utils import ensure_sequence
-
-from . import fragments
-from .model import ESMIF1
 
 
 def tiles(start: int, end: int, window: int) -> list[tuple[int, int]]:
