@@ -148,6 +148,12 @@ not inspected are marked [inferred]). N = MSA depth (up to 1.16M), L = length, q
 - **RSALOR, StructureDCA:** need one full-length single-chain structure, which AFDB does not provide above 2,700 aa;
   positions without RSA score as WT.
 
+**User decision 2026-11-16: no derived datasets in the final design.** The region archives below are the T5 /
+first-benchmark vehicle only (numbers are identical either way). The final design moves the region logic inside
+the alignment-model wrappers, like `esm2_window`/`saprot_window`: each model reads the same archive as every other
+model and its card declares the policy (`region: 1000`, `min_coverage: 0.5`, `max_depth: 50000`, `seed`). Planned
+changes per model: [§10](#10-picking-this-up).
+
 **What was built: region archives (2026-11-16, `scripts/clinical/models/regions/`).** The six models stay
 unchanged; a preprocessing step turns one protein into small archives they can score, and the scores are mapped
 back.
@@ -265,6 +271,8 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 3. Unmasked/wt-marginal cards for the PLMs in addition to masked.
 4. Alignment models: region policy and depth caps (after the audit and T5).
 5. Missing predictions in the metric: drop the variant for that model (current evaluation) or penalise coverage.
+6. ~~Region archives as derived datasets~~ **decided 2026-11-16 (user):** no derived datasets; region policy inside
+   the alignment-model wrappers, declared on the card (§3.4, §10). Region archives stay only for T5/first runs.
 
 ## 9. Experiment log
 
