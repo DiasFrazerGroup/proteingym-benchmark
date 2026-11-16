@@ -71,7 +71,7 @@ residues centred on it (shifted to fit at the protein ends) is passed with the p
 equal the zoo's `ESM2.score_mutants` exactly. Cost: one forward pass of ≤ window residues per unique position
 (positions barely repeat in clinical data: 79,752 variants at 62,453 positions in the 332-pair set).
 
-**Special tokens at window edges (to decide, both implemented as an option `special_tokens`):**
+**Special tokens at window edges** (option `special_tokens`; **decided 2026-11-16: `termini`, real ends only**, the default in every card):
 - `termini`: `<cls>` only if the window starts at residue 1, `<eos>` only if it ends at the C-terminus. This is
   the dark_energy convention (`dark_energy/scripts/esm1v/esm1v_core.py:128-181`) and tells the model the truth
   about where the protein starts and ends.
@@ -260,7 +260,7 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 
 ## 8. Open decisions
 
-1. Special tokens at window edges: `termini` or `every_window` (default proposed: `termini`, after T2).
+1. ~~Special tokens at window edges~~ **Decided 2026-11-16 (user): `termini`**, `<cls>`/`<eos>` only at the real protein ends, so the model is never told a false start or end. `every_window` stays available for comparability with ProteinGym v1 / the prototype (benchmark effect: ESM2 none, ESMC 2.181 vs 2.200).
 2. ESMC: 1,022 for parity only, or also a native 2,048 card.
 3. Unmasked/wt-marginal cards for the PLMs in addition to masked.
 4. Alignment models: region policy and depth caps (after the audit and T5).
