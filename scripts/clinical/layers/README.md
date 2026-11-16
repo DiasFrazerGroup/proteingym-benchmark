@@ -9,7 +9,7 @@ first is for comparison, the second for masking an analysis.
 | Column | Layer | Meaning | Source |
 |---|---|---|---|
 | `score_alphamissense` | scores | AlphaMissense, 0–1, higher = more pathogenic | AlphaMissense hg38 table (Zenodo 10.5281/zenodo.8208688) |
-| `score_alphamissense_source` | scores | `snv`, `protein` or `none` (see below) | |
+| `score_alphamissense_source` | scores | `snv`, `isoform_snv`, `protein` or `none` (see below) | |
 | `score_popeve` | scores | popEVE, more negative = more deleterious | popEVE v1.1 zip (UKBB 2025-03-12), per RefSeq protein |
 | `score_cadd_phred` | scores | CADD PHRED, higher = more deleterious | dbNSFP 5.3.1a |
 | `score_primateai3d` | scores | PrimateAI-3D, higher = more pathogenic | Illumina file, **only if `sources.toml` points to it** |
@@ -45,23 +45,34 @@ df[(df.mask_plddt.astype(float) > 70) & (df.mask_protein_length.astype(int) >= 1
   - **AlphaMissense** (`[alphamissense]`): the official hg38 table (every missense SNV of the canonical transcript
     of every UniProt canonical isoform), turned once into a parquet sorted by UniProt (`build_snv_index.py`). Looked
     up by the archive's UniProt accession plus the row's GRCh38 SNV (`score_alphamissense_source = snv`), else by
-    UniProt accession plus protein change (`protein`; mean over its SNVs, which agree because AlphaMissense is
-    protein-level). AlphaMissense used UniProt 2021_02: its sequence is rebuilt from the wild-type letters of
-    `protein_variant` and, if it differs from the current UniProt sequence, positions are mapped by alignment; the
-    column description says which. `layers_am_snv_mismatch.tsv` lists rows whose SNV gives AlphaMissense a different
+    UniProt accession plus protein change from the `aa_substitutions` table (`protein`; every substitution of every
+    canonical isoform, also proteins without a hg38 canonical transcript and changes no SNV can cause).
+    AlphaMissense used UniProt 2021_02: its sequence is rebuilt from the wild-type letters of `protein_variant` and,
+    if it differs from the current UniProt sequence, positions are mapped by alignment; the column description says
+    which. Where the AlphaMissense canonical sequence is outdated or missing (LPA: 4,548 aa in 2021, 2,040 aa now,
+    so kringle repeats cannot be placed reliably), the row's SNV is first looked up on AlphaMissense's non-canonical
+    transcripts (`isoforms_hg38`) and used if that transcript gives the same protein change on current UniProt
+    numbering (`isoform_snv`; transcripts named in the description). AlphaMissense notes the isoform predictions were
+    not as thoroughly evaluated. `layers_am_snv_mismatch.tsv` lists rows whose SNV gives AlphaMissense a different
     protein change than the row's (UniProt numbering); the SNV value is kept.
   - **popEVE** (`[popeve]`): the v1.1 release zip, one CSV per RefSeq protein, read in place. UniProt → RefSeq comes
     from the `DR RefSeq` lines of the local Swiss-Prot file (no id-mapping service). Among the listed NP accessions
     found in the zip (by accession, any version), the one whose sequence (rebuilt from the wild-type letters of
     `mutant`) equals the UniProt canonical sequence is used, then the displayed isoform, then the one covering most
-    positions; if it differs, positions are mapped by alignment. The NP used and how it matched are in the column
-    description and in `layers_summary.tsv` (`popeve_refseq`, `popeve_sequence`).
+    positions; if it differs, positions are mapped by alignment. If none of the listed NPs is in the release (RefSeq
+    accessions change), the popEVE protein is found by sequence in `popeve_sequences.parquet`
+    (`build_popeve_index.py`): an identical sequence, else a near-identical isoform (≥ 90% of canonical positions
+    placed, ≥ 98% identity; never a paralog below that). The NP used and how it matched are in the column
+    description and in `layers_summary.tsv` (`popeve_refseq`, `popeve_sequence`). popEVE has no proteins longer
+    than 2,302 aa, so e.g. APOB, LRP2, PKD1, SPTA1 and STAB1 get no popEVE.
   - **CADD** (dbNSFP, SNV-level): `score_snv_source` says which SNVs were used. `genomic`: the row's own GRCh38 SNV
     (`--snv-col`, default `variant_id`, e.g. `2-21041028-G-A`). `protein`: all SNVs causing the protein change, from
     the AlphaMissense table (canonical transcripts), averaged. `none`: no SNV found.
 - **Why not dbNSFP for AlphaMissense and popEVE:** their dbNSFP fields are per transcript and had to be resolved by
   UniProt accession and position; on the 109 Genebass archives that left 17% of rows without AlphaMissense (17
-  proteins with none) and 54% without popEVE. The values that were found agree with the sources above.
+  proteins with none) and 54% without popEVE. Where dbNSFP had a value, most agree; the rest came from another
+  transcript with the same position number (wrong residue after an isoform-specific insertion), see
+  `docs/clinical/layers_sources_progress.md`.
 
 ## Guarantees
 
@@ -81,7 +92,8 @@ sbatch -p genoa64 --qos=short -t 04:00:00 -c 4 --mem=48G --chdir=<repo> \
   scripts/clinical/layers/layers.sbatch IN_DIR OUT_DIR [--layers scores,masks] [--snv-col variant_id]
 ```
 
-The first run builds the AlphaMissense parquet once (`build_snv_index.py`, ~2 min, path in `sources.toml`).
+The first run builds the AlphaMissense parquets (`build_snv_index.py`, ~5 min in total) and the popEVE sequence
+index (`build_popeve_index.py`, ~2 min) once; paths in `sources.toml`.
 
 ## Licences
 

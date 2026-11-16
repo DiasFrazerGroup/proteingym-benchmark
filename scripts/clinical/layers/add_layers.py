@@ -5,7 +5,8 @@ model inputs or targets.
 
   scores  (external predictors, as published, per variant; empty for multi-mutants or when not covered)
     score_alphamissense   AlphaMissense pathogenicity, 0-1, higher = more pathogenic  [AlphaMissense tables]
-    score_alphamissense_source  snv (UniProt + the row's GRCh38 SNV) | protein (UniProt + protein change) | none
+    score_alphamissense_source  snv (UniProt + the row's GRCh38 SNV) | isoform_snv (that SNV on a non-canonical
+                          transcript, only where AlphaMissense's canonical sequence is outdated) | protein | none
     score_popeve          popEVE, more negative = more deleterious               [popEVE v1.1 zip, per RefSeq protein]
     score_cadd_phred      CADD PHRED-scaled, higher = more deleterious                         [dbNSFP]
     score_primateai3d     PrimateAI-3D, higher = more pathogenic        [Illumina file; only if configured]
@@ -25,8 +26,9 @@ If the row has a GRCh38 SNV column (default `variant_id`, e.g. 2-21041028-G-A), 
 
 Each score comes from its own complete release (paths and versions in sources.toml):
   AlphaMissense  the official canonical-isoform tables as parquets sorted by UniProt (build_snv_index.py): by
-                 (UniProt, SNV) from the hg38 table, else by (UniProt, protein change) from the aa_substitutions
-                 table. Its sequence is rebuilt from the wild-type letters of protein_variant and placed on the
+                 (UniProt, SNV) from the hg38 table; where AlphaMissense's canonical sequence is not the current
+                 UniProt one, the SNV on a non-canonical transcript with the same protein change (isoforms table);
+                 else by (UniProt, protein change) from the aa_substitutions table. Its sequence is rebuilt from the wild-type letters of protein_variant and placed on the
                  current UniProt sequence by alignment if it differs.
   popEVE         the v1.1 zip, one CSV per RefSeq protein, read in place. UniProt -> RefSeq from Swiss-Prot DR
                  lines (displayed isoform first); the RefSeq sequence (from `mutant`) is checked against UniProt and
@@ -162,7 +164,23 @@ class AlphaMissense:
     def __init__(self, cfg):
         c = cfg["alphamissense"]
         self.table, self.protein_table = c["table"], c["protein_table"]
+        self.isoform_table = c.get("isoform_table") or None
         self.cache = {}
+
+    def isoform(self, snvs):
+        """{snv} -> {snv: [(transcript_id, protein_variant, am_pathogenicity)]} from the non-canonical transcripts."""
+        if not self.isoform_table or not snvs:
+            return {}
+        out, ds = {}, pads.dataset(self.isoform_table)
+        for c in {x[0] for x in snvs}:
+            pos = sorted({x[1] for x in snvs if x[0] == c})
+            t = ds.to_table(filter=(pads.field("chrom") == c) & (pads.field("pos") >= pos[0]) &
+                            (pads.field("pos") <= pos[-1]) & pads.field("pos").isin(pos)).to_pandas()
+            for r in t.itertuples():
+                k = (r.chrom, r.pos, r.ref, r.alt)
+                if k in snvs:
+                    out.setdefault(k, []).append((r.transcript_id, r.protein_variant, float(r.am_pathogenicity)))
+        return out
 
     def protein(self, uniprot, canon):
         if uniprot not in self.cache:
@@ -374,7 +392,7 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
         am_p = scorer["am"].protein(uniprot, canon)
         pe_p = scorer["popeve"].protein(uniprot, canon)
     am_info = (f"UniProt {uniprot}: AlphaMissense sequence {am_p['note']}"
-               + ("" if am_p["in_hg38"] else "; no hg38 canonical transcript, protein changes only")
+               + ("" if am_p["in_hg38"] else "; no hg38 canonical transcript in AlphaMissense")
                if am_p and am_p["map"] else f"UniProt {uniprot} not in AlphaMissense")
     pe_info = (f"RefSeq {pe_p['np']} for UniProt {uniprot}: {pe_p['note']}" if pe_p else
                f"no popEVE RefSeq protein for UniProt {uniprot}")
@@ -382,8 +400,11 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
         "uniprot_pos": f"mutated position(s) on the canonical UniProt sequence ({cfg['uniprot']['version']})",
         "score_alphamissense": "AlphaMissense pathogenicity (0-1, higher = more pathogenic), by UniProt + GRCh38 SNV, "
                                f"else by protein change; {cfg['alphamissense']['version']}; {am_info}",
-        "score_alphamissense_source": "how the AlphaMissense value was found: snv (UniProt + the row's GRCh38 SNV) | "
-                                      "protein (UniProt + protein change, aa_substitutions table) | none",
+        "score_alphamissense_source": "how the AlphaMissense value was found: snv (UniProt + the row's GRCh38 SNV, "
+                                      "canonical transcript) | isoform_snv (the row's SNV on a non-canonical "
+                                      "transcript giving the same protein change; only where AlphaMissense's "
+                                      "canonical sequence is not the current UniProt one) | protein (UniProt + "
+                                      "protein change, aa_substitutions table) | none",
         "score_popeve": f"popEVE score (more negative = more deleterious), by protein change; "
                         f"{cfg['popeve']['version']}; {pe_info}",
         "score_cadd_phred": f"CADD PHRED (higher = more deleterious); {cfg['dbnsfp']['version']}",
@@ -406,6 +427,7 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
         muts = (df[mutant_col] if mutant_col in df else
                 pd.Series([mutant_from_sequence(s, wt) for s in df[seq_col]], index=df.index))
         parsed = [parse_mutant(m) for m in muts]
+        asec_desc = {}
         new = {"uniprot_pos": [":".join(str(pmap.get(p, "")) for _, p, _ in m) if m else "" for m in parsed]}
         if "masks" in layers:
             new["mask_plddt"] = [min((plddt.get(p, np.nan) for _, p, _ in m), default=np.nan) if m else np.nan
@@ -414,12 +436,17 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
             new["mask_protein_length"] = [len(canon) if canon else np.nan] * len(df)
         if "scores" in layers:
             single = [m[0] if m and len(m) == 1 else None for m in parsed]
-            snvs_of, src, am, am_src, pe = [], [], [], [], []
+            snvs_of, src, am, am_src, pe, iso_tx = [], [], [], [], [], set()
+            row_snv = [SNV_RE.match(df[snv_col].iat[i]) if snv_col in df and s else None for i, s in enumerate(single)]
+            row_snv = [(g[1].upper().removeprefix("CHR"), int(g[2]), g[3].upper(), g[4].upper()) if g else None
+                       for g in row_snv]
+            # AlphaMissense canonical sequence is not the current UniProt one (or absent): SNVs on other transcripts
+            iso = (scorer["am"].isoform({x for x in row_snv if x and x not in am_p["snv"]})
+                   if am_p and not (am_p["in_hg38"] and am_p["note"].startswith("identical")) else {})
             for i, s in enumerate(single):
                 upos = pmap.get(s[1]) if s else None
                 key = AlphaMissense.key(am_p, s[0], upos, s[2]) if s and am_p else None
-                g = SNV_RE.match(df[snv_col].iat[i]) if snv_col in df and s else None
-                snv = (g[1].upper().removeprefix("CHR"), int(g[2]), g[3].upper(), g[4].upper()) if g else None
+                snv = row_snv[i]
                 if snv:
                     snvs_of.append([snv])
                     src.append("genomic")
@@ -433,6 +460,10 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
                     am.append(float(am_p["snv"][snv][1]))
                     am_src.append("snv")
                     scorer["am_snv_vs_protein"].append((path.name, f"{s[0]}{s[1]}{s[2]}", am_p["snv"][snv][0], key))
+                elif snv and upos and (hits := [x for x in iso.get(snv, []) if x[1] == f"{s[0]}{upos}{s[2]}"]):
+                    am.append(float(np.mean([x[2] for x in hits])))
+                    am_src.append("isoform_snv")
+                    iso_tx.update(x[0] for x in hits)
                 elif key and key in am_p["score"]:
                     am.append(am_p["score"][key])
                     am_src.append("protein")
@@ -449,6 +480,9 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
                 cadd.append(float(np.mean(cv)) if cv else np.nan)
                 pv = [pai[x] for x in xs if x in pai]
                 p3.append(float(np.mean(pv)) if pv else np.nan)
+            if iso_tx:
+                asec_desc["score_alphamissense"] = (desc["score_alphamissense"] + "; isoform_snv rows from "
+                                                    f"non-canonical transcript(s) {', '.join(sorted(iso_tx))}")
             new.update(score_alphamissense=am, score_alphamissense_source=am_src, score_popeve=pe,
                        score_cadd_phred=cadd, score_snv_source=src)
             if scorer["dbnsfp"].pai:
@@ -460,7 +494,7 @@ def annotate(path, out_dir, cfg, sprot, scorer, layers, snv_col, mutant_col, for
             df[c] = [fmt(x) for x in vals]
         inner[asec["path"]] = (df.to_csv(index=False).encode(), inner[asec["path"]][1])
         nt = [x for x in asec.get("non_targets", []) if x["name"] not in new]
-        asec["non_targets"] = nt + [{"name": c, "description": desc[c]} for c in new]
+        asec["non_targets"] = nt + [{"name": c, "description": asec_desc.get(c, desc[c])} for c in new]
         cov = {c: float(np.mean([x != "" for x in df[c]])) for c in new}
         extra = dict(am_sequence=am_p["note"] if am_p else "", popeve_refseq=pe_p["np"] if pe_p else "",
                      popeve_sequence=pe_p["note"] if pe_p else "") if "scores" in layers else {}

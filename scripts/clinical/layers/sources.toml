@@ -23,7 +23,13 @@ source = "/no_backup/diasfrazer/db/alphamissense/raw/AlphaMissense_hg38.tsv.gz"
 # source for lookups by protein change; it also covers proteins without a hg38 canonical transcript (e.g. LPA, P08519)
 protein_table = "/no_backup/diasfrazer/egalpern_pgb_clinical/layers/alphamissense_aa_substitutions.parquet"
 protein_source = "/no_backup/diasfrazer/db/alphamissense/raw/AlphaMissense_aa_substitutions.tsv.gz"
-version = "AlphaMissense canonical isoforms, hg38 + aa_substitutions tables (Zenodo 10.5281/zenodo.8208688, CC BY-NC-SA 4.0)"
+# isoform_table: AlphaMissense for non-canonical transcripts (AlphaMissense_isoforms_hg38; "not thoroughly evaluated"
+# per its README). Used only when the AlphaMissense canonical sequence of a protein is not the current UniProt sequence
+# (e.g. LPA: AlphaMissense used the 4,548-aa 2021 entry, UniProt now has 2,040 aa): the row's SNV on a transcript
+# whose protein change equals the row's (current UniProt numbering). Set to "" to disable.
+isoform_table = "/no_backup/diasfrazer/egalpern_pgb_clinical/layers/alphamissense_isoforms_hg38.parquet"
+isoform_source = "/no_backup/diasfrazer/db/alphamissense/raw/AlphaMissense_isoforms_hg38.tsv.gz"
+version = "AlphaMissense hg38, aa_substitutions and isoforms_hg38 tables (Zenodo 10.5281/zenodo.8208688, CC BY-NC-SA 4.0)"
 
 [popeve]
 # popEVE v1.1 (Orenbuch, Kollasch et al.), UK Biobank build 2025-03-12, licence CC BY 4.0. One CSV per RefSeq
