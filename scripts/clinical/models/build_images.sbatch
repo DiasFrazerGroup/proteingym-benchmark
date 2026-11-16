@@ -14,7 +14,15 @@ echo "host $(hostname) job ${SLURM_JOB_ID:-none}"
 for m in "$@"; do
   [ -f "$IMG/$m.sif" ] && { echo "$m: exists"; continue; }
   t=$(date +%s)
-  if (cd "$REPO/models/$m" && apptainer build --fakeroot "$IMG/$m.sif" Singularity.def) > "$IMG/logs/build_$m.log" 2>&1; then
+  SRC="$REPO/models/$m"
+  # evmutation2's Singularity.def copies .python-version, which the folder does not have (upstream bug): build
+  # from a copy with the version of its Dockerfile base image
+  if grep -q "\.python-version" "$SRC/Singularity.def" && [ ! -f "$SRC/.python-version" ]; then
+    rm -rf "$IMG/tmp/src_$m"; cp -r "$SRC" "$IMG/tmp/src_$m"; SRC="$IMG/tmp/src_$m"
+    sed -n 's/^FROM python:\([0-9.]*\).*/\1/p' "$SRC/Dockerfile" | head -1 > "$SRC/.python-version"
+    echo "$m: building from a copy with .python-version $(cat "$SRC/.python-version")"
+  fi
+  if (cd "$SRC" && apptainer build --fakeroot "$IMG/$m.sif" Singularity.def) > "$IMG/logs/build_$m.log" 2>&1; then
     echo "$m: BUILT in $(( ($(date +%s) - t) / 60 )) min"
   else
     echo "$m: BUILD FAILED ($IMG/logs/build_$m.log)"; tail -5 "$IMG/logs/build_$m.log"
