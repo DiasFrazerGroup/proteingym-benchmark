@@ -250,6 +250,8 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 | 2026-11-16 | esm2_window, 66 proteins, 5,840 unique mutants (job 31923533, 3g.40gb, batch 16) | T1 on all 48 proteins ≤ 1,022 aa: 1.6e-5 **PASS**; termini vs every_window on L > 1,022: r 0.99998 (max 0.18) | `$WORK/models/plm_windows/esm2/` |
 | 2026-11-16 | esmc_window windows 1,022 / 2,048 / full (job 31921335, 26 min on 3g.40gb) | T1 48 proteins 2.7e-5 **PASS**; termini vs every_window r 0.9985 (max 1.73): ESMC is more sensitive to edge tokens than ESM2 | `$WORK/models/plm_windows/esmc/` |
 | 2026-11-16 | saprot_window, every archive (job 31923536) | T1 1.1e-5 **PASS**; APOB/LRP2/PKD1 use all 16–18 fragments, no position uncovered; same variant in different archives: spread 1e-5 | `$WORK/models/struct_windows/saprot/` |
+| 2026-11-16 | esm-if1_window, every archive (job 31923537, 3g.40gb) | T1 1.8e-4 **PASS** (window = L·(zoo − zoo_wt)); vs prototype r 1.00000 on all 5,840 variants (max 0.03 on long proteins); same variant across archives: spread 4e-3 (batch numerics); one caching-allocator OOM warning on APOB, recovered | `$WORK/models/struct_windows/esmif1/` |
+| 2026-11-16 | Alignment-model images (job 31923582, genoa64 CPU, `build_images.sbatch`) | rsalor built (3 min); gemme failed: download server gave an empty reply (`curl: (52)`), retry; others in progress | `/no_backup/diasfrazer/egalpern_pgb_clinical/containers/` |
 | 2026-11-16 | Per-variant comparison with earlier implementations (`scripts/clinical/models/export_scores.py`) | see "T2/T3 results" below | — |
 
 ### T2/T3 results (2026-11-16)
@@ -274,6 +276,26 @@ Per variant, Pearson r and max abs difference; L ≤ 1,022: 2,933 variants, L > 
   not the edge tokens; open (candidates: the window placement at the ends, fair-esm vs transformers numerics).
 - **Benchmark effect of the ESMC choices is small** (Genebass, mean −log10 P, all 109 pairs): 2,048 window 2.200,
   every_window 1,022 2.200, full length 2.192, termini 1,022 2.181 (prototype on its 105 pairs: 2.159).
+
+### Genebass benchmark with the ported models (2026-11-16)
+
+Mean −log10 P of per-pair Pearson r(β, score) (`proteingym_clinical/genebass/scripts/16_eval_genebass_source.py`,
+predictions exported by `scripts/clinical/models/export_scores.py` as `v2__*`; layers from their own releases).
+
+| Model | All 109 pairs (coverage) | Paper set, 103 pairs |
+|---|---|---|
+| AlphaMissense (layer) | 2.695 (100%) | 2.363 (paper: 2.37) |
+| VESM++ (paper's scores, reference) | 2.671 (105 pairs) | 2.468 |
+| esm2_window, termini 1,022 | 2.403 (100%) | 2.153 (paper ESM2-650M, unmasked: 2.10) |
+| popEVE (layer) | 2.372 (97 pairs, 74% of rows) | 2.053 (91 pairs) |
+| esmc_window, termini 1,022 | 2.181 (100%) | 1.973 |
+| CADD (layer) | 1.912 (99.9%) | 1.682 |
+| saprot_window | 1.640 (100%) | 1.529 |
+| Allele frequency | 1.629 | 1.351 |
+| esm-if1_window | 1.273 (100%) | 1.140 |
+
+All four ported models now cover every pair (the prototype missed CST3, GPLD1 and UGT1A5). PottsMPNN and BLOSUM62
+are not ported yet (PottsMPNN needs the fragment logic; BLOSUM62 needs nothing).
 
 ## 10. Picking this up (handoff, 2026-11-16)
 
