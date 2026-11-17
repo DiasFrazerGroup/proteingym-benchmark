@@ -308,8 +308,8 @@ whole sweep (N, L_cov per t), time and peak RSS.
 | ColabFold/MMseqs2 search (UniRef100 + environmental DBs, up to 1.16M rows) instead of EVcouplings/jackhmmer, 5 iterations, UniRef100 2022 | user data decision (2026-11-09, PG2 protocol); re-searching is a data change |
 | Bit scores on the MMseqs2 scale (bits/residue = header bit score / L), thresholds swept 0–1.5; EVE's 0.3 bits/residue reference does not transfer (an exact self-hit of APOA1 scores 0.53 bits/residue) | MMseqs2 instead of HMMER |
 | Thresholds are post-hoc cuts of one search, not separate jackhmmer runs at each bit score (EVE re-searches, so each threshold also changes the profile) | one ColabFold search per protein |
-| **Bit scores are not in the benchmark archives**: proteingym-base `MSA.dump` writes `seq_<i>` headers (`proteingym/base/msa.py`), so the dataset MSA has no bit scores and the selection is skipped (rule `no_bitscores`: row filters + 200k cap only) | archive format; fix is data-side (keep the headers when building archives / upstream `MSA.dump`) — **open decision** |
-| Validation reads the original ColabFold a3m (`a3m_headers_dir`, matched by query sequence, every row verified against the dataset MSA) to get the bit scores | stopgap to test the protocol; not for benchmark runs (reads data outside the archive) |
+| (resolved) proteingym-base `MSA.dump` writes `seq_<i>` headers, so the first archives had no bit scores (rule `no_bitscores`: row filters + 200k cap only) | **user decision 2026-11-17: archives keep the ColabFold headers** (data branch `scripts/clinical/msa/restore_msa_headers.py`, job 31939179 -> `genebass/splits_layers_hdr/`, sequences verified identical and in order) |
+| `a3m_headers_dir` (original ColabFold a3m, matched by query, every row verified) | test fallback only (used for the "bits" validation runs before the header-restored archives existed); never in benchmark runs |
 | Steps 2–4 and "lowest qualifying t" | paper silent ("best available") |
 | Columns all kept (EVE code default 0.3 would drop ~24% of positions) | popEVE choice |
 | Per-model weighting and column handling unchanged | fairness: models not modified |
@@ -317,9 +317,11 @@ whole sweep (N, L_cov per t), time and peak RSS.
 **Bit scores in the wrapper.** proteingym-base keeps the raw a3m bytes (`MSA.file`), but
 `evedesign.proteingym.msa_to_sequences` builds `Sequence(id=None)`. Each `*_filtered` package's `__init__.py` calls
 `install_header_hook()`, which wraps that function (the shared runner imports the model package before converting the
-dataset) and attaches the per-row bit scores (`pg_bitscores`) to the `Sequences`; ids stay None, so the wrapped models
-see exactly what they saw before. With today's archives the headers are `seq_<i>` and the scores are all NaN, which
-the filter treats as "no bit scores". `a3m_headers_dir` (default null) is the validation stopgap above.
+dataset) and attaches the per-row bit scores (`pg_bitscores`, parsed from the raw a3m bytes `MSA.file` of the
+archive; one header per loaded sequence, same order, count checked) to the `Sequences`; ids stay None, so the wrapped
+models see exactly what they saw before. evedesign's `dataset_to_evedesign` does not keep headers or pass `MSA.file`
+(checked, evedesign 0.0.5/0.0.6 `proteingym.py`), hence the hook. Archives with `seq_<i>` headers give all-NaN scores,
+which the filter treats as "no bit scores". `a3m_headers_dir` (default null) is a test fallback only.
 
 **NaN in the pipeline.** Checked on APOA1: a NaN prediction survives `predictions_delta` -> `dump` -> reload as a
 float NaN (not null), and proteingym-base's `metric_spearman` then returns NaN for that dataset (scipy propagates).
@@ -417,9 +419,9 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 5. Missing predictions in the metric: drop the variant for that model (current evaluation) or penalise coverage.
 6. ~~Region archives as derived datasets~~ **decided 2026-11-16 (user):** no derived datasets; region policy inside
    the alignment-model wrappers, declared on the card (§3.4, §10). Region archives stay only for T5/first runs.
-7. **Bit scores for the EVE alignment selection (2026-11-17):** the archives' MSAs have `seq_<i>` headers
-   (proteingym-base `MSA.dump`), so `*_filtered` can only apply the row filters on benchmark archives. Keep the
-   ColabFold headers in the archives (data side), or accept row filters only (§3.6, §10).
+7. ~~Bit scores for the EVE alignment selection~~ **decided 2026-11-17 (user):** archives keep the ColabFold
+   headers (data branch, `genebass/splits_layers_hdr/`, replaces `splits_layers` once verified); `*_filtered` reads
+   the bit scores from the archive's raw a3m (§3.6).
 8. EVE columns: popEVE-like all columns (`threshold_focus_cols_frac_gaps: 1.0`, zoo card) kept; EVE 2021 code
    default 0.3 would leave ~24% of positions unscored (§3.6).
 
@@ -620,10 +622,9 @@ Reading:
 
 **Progress note (MSA filter, 2026-11-17):** `*_filtered` folders built and validated on a few proteins (§3.6, §9
 "MSA filter results"). **Next:**
-1. **Decision (data side): bit scores in the archives.** proteingym-base `MSA.dump` writes `seq_<i>` headers, so the
-   EVE threshold selection cannot run on the benchmark archives (it falls back to `no_bitscores`). Options: keep the
-   ColabFold headers when building archives (data branch; upstream fix of `MSA.dump`), or accept the row filters
-   only. `a3m_headers_dir` is a validation stopgap and must not be used in benchmark runs.
+1. **Bit scores in the archives (decided: keep the ColabFold headers).** Check jobs 31939182/31939183 (rsalor on
+   PCSK9/LDLR from `splits_layers_hdr/`, after the data job 31939179): expect `bitscore_source = dataset a3m
+   headers` and predictions identical to the "bits" runs. Upstream: `MSA.dump` in proteingym-base drops headers.
 2. **Compaction for proteins > 2,300 aa (EVE, EVmutation):** EVE builds the one-hot training set as float64
    N x L x 20 and, for scoring, the whole mutant set at once (43k x 2,261 x 20 float64 = 15.5 GB for ABCA1); build it
    per batch from an int8 N x L matrix (training) and per scoring batch; weights in blocks. EVmutation: plmc memory
