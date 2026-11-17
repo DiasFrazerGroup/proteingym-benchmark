@@ -237,6 +237,19 @@ decision 2026-11-09, PG2 protocol).
    parameters, fits a 7g.80gb slice [estimate]); sequence weights on GPU in blocks or by MMseqs2 clustering.
 3. Validation available locally: our EVE on proteins <= 2,300 aa vs the release's `EVE` column, per protein.
 
+**EVE filter on our ColabFold MSAs (2026-11-17, job 31937015, 1.3 min; `scripts/clinical/models/msa_filter/`).**
+User decision: keep ColabFold as the base alignment, apply the EVE filter, give every MSA model the same filtered
+alignment; compaction (one-hot per batch) is a second step. The a3m headers carry the MMseqs2 bit score, identity,
+e-value and aligned ranges, so EVE's bit-score sweep is reproducible (bits/residue = bitscore / L; MMseqs2 scale, not
+HMMER's, hence a sweep 0-1.5). Per protein and threshold: N after the >= 50% coverage filter, L_cov (columns >= 70%
+occupied). Table: `$WORK/models/msa_filter/eve_sweep.tsv`.
+- The >= 50% coverage filter alone takes every MSA below 100k (1M rows -> 2.5k-100k). The bit-score threshold then
+  mostly serves L_cov.
+- Strict EVE criteria (L_cov >= 0.8 L, 10 L <= N <= 100k) met by 44 / 66 proteins.
+- Long multidomain proteins lose most rows to the coverage filter (domain-local hits): APOB 2,533 of 21,926 rows
+  (N/L 0.55), PKD1 4,186 of 883,818 (N/L 1.0), LRP2 18,958 of 768,451 (L_cov 0.66 at 0; 10,474 at 0.05 with L_cov 0.88),
+  LPA 311 (kringle repeats). Up to 2,300 aa most proteins keep N/L >= 5 (ABCA1 2,261 aa: 18,775 at 0.5, L_cov 0.83).
+
 ## 4. Validation protocol
 
 Every change is validated before any benchmark run:
