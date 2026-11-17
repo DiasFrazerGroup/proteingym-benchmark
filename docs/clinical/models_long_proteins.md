@@ -539,9 +539,12 @@ full run (rsalor, W = 1,000) stays exported as `predictions/v2__rsalor`.
 per job, jobs 31937458–31937558 in `$WORK/logs/jobs.txt`), summary by `compare_msa_filter.py`
 (`$WORK/models/msa_filter/val/{runs,pairs}.tsv`). Scored: all single substitutions (StructureDCA: a seeded sample of
 2,000 + the archive's Genebass mutants), pred = score − score(WT). Variants: **zoo** = unchanged zoo model on the
-unfiltered MSA (2 h cap); **off** = `*_filtered` with `msa_filter: false`; **filtered** = the card as it runs on the
-benchmark archives (no bit scores in the archives -> row filters only, rule `no_bitscores`); **bits** = the full EVE
-protocol with bit scores from the original ColabFold a3m (`a3m_headers_dir`, validation only).
+unfiltered MSA (2 h cap); **off** = `*_filtered` with `msa_filter: false`; **filtered** = the card on the first
+archives, whose headers were `seq_<i>` (now `genebass/splits_layers_noheaders/`): row filters only, rule
+`no_bitscores`; **bits** = the full EVE protocol with bit scores from the original ColabFold a3m
+(`a3m_headers_dir`, test fallback); **hdr** = the card on the header-restored archives (`genebass/splits_layers/`
+since 2026-11-17 18:34), bit scores read from the archive itself. All runs except `hdr` (and the ABCA1 EVE scoring
+rerun, if needed) used the old archives; sequences and order are identical in both.
 
 **Filter per protein** (rows in -> fragments / indeterminate dropped -> rows after row filters; then the threshold):
 
@@ -605,8 +608,8 @@ higher = more damaging, ours is an ELBO difference, so the expected sign is nega
 | Protein | Variant | N | Spearman all singles | Spearman Genebass mutants | Time |
 |---|---|---|---|---|---|
 | APOA1 (267) | filtered (= bits) | 5,559 | −0.854 (5,073) | −0.735 (30) | 1 h 41 min |
-| PCSK9 (692) | bits | 1,410 (Neff 112) | PENDING (job 31937557, 38 it/s) | | |
-| ABCA1 (2,261) | bits | 21,904 | PENDING (job 31937558, queued on the GPU group limit) | | |
+| PCSK9 (692) | bits | 1,410 (Neff 112) | −0.881 (13,148) | −0.887 (61) | 3 h 42 min (build 185 min at 38 it/s, score 36 min; 8.7 GB) |
+| ABCA1 (2,261) | bits | 21,904 | PENDING: job 31937558 trains at 12 it/s (~9 h); scoring 43k singles x 20k samples will not fit the 12 h GPU limit, so 31940397 (afternotok) rescores from the saved checkpoint `$WORK/models/msa_filter/val/ckpt/eve__O95477__bits.pt` | | |
 
 Reading:
 - The plumbing is exact (T1 on all four models) and every position stays scorable (no columns dropped; NaN only
@@ -615,6 +618,11 @@ Reading:
   (Spearman vs zoo 0.97–0.999) while cutting StructureDCA time 4–5x and making ABCA1 feasible (zoo > 2 h).
 - With bit scores the EVE protocol can cut the alignment hard where coverage is patchy (PCSK9: 100k -> 1.4k rows,
   Spearman vs zoo 0.79–0.92). Whether that helps is a benchmark question (Genebass), not answered here.
+- **Header-restored archives (`hdr`, jobs 31940394/31940395, rsalor on PCSK9 and LDLR):** `bitscore_source =
+  dataset a3m headers`, same threshold and N as `bits`, predictions identical (max abs diff 0). The card needs no
+  `a3m_headers_dir` on these archives.
+- EVE with the protocol alignment agrees with the popEVE release at Spearman 0.85–0.88 (APOA1, PCSK9; one seed, our
+  ColabFold alignment vs their jackhmmer alignment), even for PCSK9 where the protocol keeps only 1,410 rows.
 - Memory is dominated by loading the archive's MSA into Python (proteingym-base + evedesign objects), not by the
   models; filtered models on ABCA1 need ~13 GB, IGF1R EVmutation 34 GB (plmc on 1,367 columns).
 
@@ -622,9 +630,11 @@ Reading:
 
 **Progress note (MSA filter, 2026-11-17):** `*_filtered` folders built and validated on a few proteins (§3.6, §9
 "MSA filter results"). **Next:**
-1. **Bit scores in the archives (decided: keep the ColabFold headers).** Check jobs 31939182/31939183 (rsalor on
-   PCSK9/LDLR from `splits_layers_hdr/`, after the data job 31939179): expect `bitscore_source = dataset a3m
-   headers` and predictions identical to the "bits" runs. Upstream: `MSA.dump` in proteingym-base drops headers.
+1. **Bit scores in the archives: done.** Header-restored archives are `genebass/splits_layers/` (old ones in
+   `splits_layers_noheaders/`); checked (jobs 31940394/31940395): bit scores read from the archive, predictions
+   identical to the `bits` runs. Upstream: `MSA.dump` in proteingym-base still drops headers (report it).
+   **Pending:** EVE ABCA1 (jobs 31937558, 31940397 rescoring from the checkpoint if the first times out); then rerun
+   `compare_msa_filter.py $WORK/models/msa_filter/val` and fill the ABCA1 row of the EVE table.
 2. **Compaction for proteins > 2,300 aa (EVE, EVmutation):** EVE builds the one-hot training set as float64
    N x L x 20 and, for scoring, the whole mutant set at once (43k x 2,261 x 20 float64 = 15.5 GB for ABCA1); build it
    per batch from an int8 N x L matrix (training) and per scoring batch; weights in blocks. EVmutation: plmc memory
