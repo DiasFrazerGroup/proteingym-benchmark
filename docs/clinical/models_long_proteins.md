@@ -336,17 +336,58 @@ predictions exported by `scripts/clinical/models/export_scores.py` as `v2__*`; l
 All four ported models now cover every pair (the prototype missed CST3, GPLD1 and UGT1A5). PottsMPNN and BLOSUM62
 are not ported yet (PottsMPNN needs the fragment logic; BLOSUM62 needs nothing).
 
+### T5 results: alignment models on region archives (2026-11-17)
+
+`collect_regions.py summary --models rsalor structuredca evmutation evmutation2 eve --tag t5`
+(full table: `$WORK/models/regions/t5_summary.tsv`). Region archives from `make_regions.py` (§3.4); unchanged zoo
+models; CPU jobs on genoa64, evmutation2 on a GPU slice. Coverage = fraction of the protein's Genebass mutants with a
+prediction. Time = sum over regions; RSS = peak per region.
+
+| Model | Protein (L) | W | Regions ok | Coverage | Time total (max region) | Peak RSS |
+|---|---|---|---|---|---|---|
+| rsalor | APOB (4,563) | 500 / 1,000 | 18/18, 9/9 | 1.00 / 1.00 | 0.4 / 0.3 min | 0.4 GB |
+| rsalor | LRP2 (4,655) | 500 / 1,000 | 18/18, 9/9 | 1.00 / 1.00 | 1.7 / 1.5 min | 0.8 GB |
+| rsalor | PKD1 (4,303) | 500 / 1,000 | 17/17, 8/8 | 1.00 / 1.00 | 1.0 / 0.7 min | 0.8 GB |
+| structuredca | APOB | 500 / 1,000 | all | 1.00 / 1.00 | 3.0 / 4.1 min | 0.6 GB |
+| structuredca | LRP2 | 500 / 1,000 | all | 1.00 / 1.00 | 15.7 / 18.0 min (5.0) | 0.9 GB |
+| structuredca | PKD1 | 500 / 1,000 | all | 1.00 / 1.00 | 4.4 / 4.6 min | 0.7 GB |
+| evmutation | APOB | 500 / 1,000 | all | 0.93 / 0.97 | 31 / 59 min (16) | 3.8 / 19.3 GB |
+| evmutation | LRP2 | 500 / 1,000 | all | 0.94 / 0.92 | 225 / 373 min (102) | 4.1 / 15.0 GB |
+| evmutation | PKD1 | 500 / 1,000 | all | 0.93 / 0.87 | 128 / 168 min (57) | 4.0 / 14.9 GB |
+| evmutation2 (GPU) | APOB, LRP2, PKD1 | 500 | all | 1.00 | 22–25 min (1.6) | 12.9 GB host |
+| evmutation2 (GPU) | APOB, LRP2, PKD1 | 1,000 | 1/9, 0/8, 0/9 | 0.13 / 0 / 0 | — | CUDA OOM |
+| eve (GPU) | PCSK9 (692) | 250 | 1/5 run | 0.32 | 92 min per region | 4.2 GB host |
+
+- **Every model fits the cluster at W = 500** with coverage 1.00 (rsalor, structuredca, evmutation2) or ≥ 0.93
+  (evmutation: its gap rule excludes columns, those mutants are NaN, cross-checked against the rule). Depth after
+  re-filtering: median 1.8k (APOB), 10–14k (PKD1), 29–35k (LRP2) sequences per region.
+- **evmutation2 at W = 1,000 does not fit a GPU slice** (CUDA OOM, tries to allocate 14.9 GB+); W = 500 does.
+- **eve** is too slow for routine use: 92 min for one PCSK9 region of 250 on 3g.40gb; not run on long proteins.
+- **gemme**: not tested (image build fails, lcqb.upmc.fr download returns empty replies).
+
+Region size vs full length on PCSK9 (692 aa, fits whole: W = 10,000 is the full-length run), Pearson on the 78
+Genebass mutants:
+
+| Model | W500 vs full | W250 vs full | W250 vs W500 |
+|---|---|---|---|
+| rsalor | 0.970 | 0.884 | 0.888 |
+| structuredca | 0.966 | 0.864 | 0.878 |
+| evmutation | 0.935 (n 45) | 0.906 (n 53) | 0.932 (n 49) |
+| evmutation2 | 0.930 | 0.808 | 0.813 |
+
+W = 500 reproduces the full-length scores at r ≈ 0.93–0.97; W = 250 loses noticeably (0.81–0.91). Default for the
+wrapper refactor: region 500 (evmutation2 needs ≤ 500 on a GPU slice anyway); 1,000 for CPU models if wanted.
+
+Full runs over all 66 proteins were dropped by user decision (2026-11-17: a few tests are enough). The one finished
+full run (rsalor, W = 1,000) stays exported as `predictions/v2__rsalor`.
+
 ## 10. Picking this up
 
-**Progress note (T5, alignment models; keep updated, 2026-11-16 ~22:00):** region code committed
-(`scripts/clinical/models/regions/`, §3.4). T5 archives in `$WORK/models/regions/archives/` (APOB, LRP2, PKD1 at
-W 500/1,000; PCSK9 at 250/500/full), predictions in `$WORK/models/regions/preds/<model>/t5/`. Done: rsalor,
-structuredca, evmutation2 (GPU) on PCSK9 + long proteins, evmutation on PCSK9/APOB, eve one PCSK9 region (92 min
-on 3g.40gb). Still running: evmutation LRP2/PKD1 (W500, W1000). Full run (W1,000, all 66 proteins) in
-`$WORK/models/regions/full/{archives,preds}`: rsalor done and exported (`predictions/v2__rsalor`), structuredca,
-evmutation2, evmutation running (job IDs in `$WORK/logs/jobs.txt`). eve and gemme not in the full run (cost /
-image). Then: `collect_regions.py --arch .../full/archives --preds .../full/preds export ...` per model and
-`16_eval_genebass_source.py`.
+**Progress note (T5, alignment models, 2026-11-17):** T5 done (§9, T5 results). Region code in
+`scripts/clinical/models/regions/`, archives in `$WORK/models/regions/archives/`, predictions in
+`$WORK/models/regions/preds/<model>/t5/`. No full runs (user decision). **Next:** move the region logic inside the
+alignment-model wrappers (card declares `region`, `min_coverage`, `max_depth`, `seed`; no derived datasets), default
+region 500.
 
 State on 2026-11-16 (evening):
 - **Done, validated (T1–T3), benchmarked:** `esm2_window`, `esmc_window`, `saprot_window`, `esm-if1_window`
@@ -357,7 +398,7 @@ State on 2026-11-16 (evening):
   `in_vesm_paper` flags); the model runs used the no-MSA copies in `$WORK/genebass_api/build/splits/` (same rows).
 - **Next, in order:**
   1. Alignment-model images: job 31923582 (`$WORK/logs/build_images_*.log`); rebuild `gemme` (download failed).
-  2. T5 on APOB, LRP2, PKD1 + one mid-size protein: region archives (§3.4: crop WT, MSA match columns, structure
+  2. (T5 DONE, §9) T5 on APOB, LRP2, PKD1 + one mid-size protein: region archives (§3.4: crop WT, MSA match columns, structure
      fragment; re-filter rows by coverage in the region; random depth cap; weights once per region), run the
      unchanged zoo models on them, map predictions back. Then NaN instead of WT for unscored positions (EVmutation,
      RSALOR, GEMME) and per-protein failure handling.
