@@ -80,6 +80,7 @@ Earlier jobs: rebuild 31809884 and 31810199, MSAs for the 5 new proteins 3181019
 | Rows that can't be mapped to a UniProt wild type are dropped and listed | Ours (an archive needs a wild-type position) |
 | MSA: ColabFold on UniRef100 Jan 2026, no post-alignment filtering; ignore PG2's jackhmmer MSA | User, 2026-11-09 |
 | ColabFold recipe adapted to UniRef100: no cluster expansion, no environmental DB, `--max-seqs 1e6` | Ours (inferred from PG2 depths), to confirm with the PG2 builders |
+| Archives keep the ColabFold a3m headers (bit scores for the EVE-protocol filter); `restore_msa_headers.py` after the layer step | User, 2026-11-17 |
 | Structures: AFDB v6, AFDB fragments for proteins > 2,700 aa; no AF2 re-folding | User, 2026-11-16 (replaces "PG2 protocol, AF2") |
 | PrimateAI-3D: not for now | User, 2026-11-16 |
 | Push `clinical/genebass-data` to the fork | User, 2026-11-16 |

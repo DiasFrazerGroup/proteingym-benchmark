@@ -123,6 +123,14 @@ codons), as in the paper.
 - **MSA:** the PG2 protocol, ColabFold on UniRef100 2026_01 with no post-alignment filtering. This is the
   `colabfold_search` monomer search with filtering off. Because UniRef100 is not clustered there is no cluster
   expansion, no environmental database, and the hit limit is raised to 1M. Depths reach 1.16M sequences.
+- **MSA headers (decided 2026-11-17):** the archives carry the original ColabFold a3m, headers included. Each
+  header holds the MMseqs2 hit annotation: name, bit score, identity, e-value, query start/end/length, target
+  start/end/length. The alignment models need the bit scores to follow the EVE protocol (bit-score threshold
+  selection, model branch `docs/clinical/models_long_proteins.md` §3.5-3.6). proteingym-base `MSA.dump` rewrites
+  headers as `seq_<i>`, so `scripts/clinical/msa/restore_msa_headers.py` puts the original file back after the layer
+  step, checking that every sequence is identical and in the same order and that headers are unique. Loaded with
+  proteingym-base, `MSA.value` has no headers; `MSA.file` holds the raw a3m with them. Upstream issue to report:
+  `MSA.dump` drops headers (like the pLDDT B-factors).
 
 ### Index file
 

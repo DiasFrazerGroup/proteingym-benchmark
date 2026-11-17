@@ -17,5 +17,9 @@ F=/no_backup/diasfrazer/db/vesm_djzn25_figdata/extracted/data/Fig6_data
 cp "$WORK/genebass/genebass_fig6b.csv" datasets/clinical/genebass/genebass_fig6b.csv
 # annotation layers (external scores + masks): final archives in $WORK/genebass/splits_layers
 "$PY" scripts/clinical/layers/add_layers.py "$WORK"/genebass/splits/*.splits.pgdata --out "$WORK/genebass/splits_layers"
+# ColabFold a3m headers (bit scores) back into the final archives (proteingym-base MSA.dump drops them)
+"$PY" scripts/clinical/msa/restore_msa_headers.py "$WORK"/genebass/splits_layers/*.splits.pgdata \
+  --msa-dir "$WORK/genebass_msas" --out "$WORK/genebass/splits_layers_hdr"
+rm -rf "$WORK/genebass/splits_layers" && mv "$WORK/genebass/splits_layers_hdr" "$WORK/genebass/splits_layers"
 du -sh "$WORK/genebass/splits" "$WORK/genebass/splits_layers"
 echo "REBUILD OK"
