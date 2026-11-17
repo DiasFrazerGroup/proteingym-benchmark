@@ -48,7 +48,9 @@ def main():
     ap.add_argument("tag")
     ap.add_argument("--hp", default="{}", help="JSON dict overriding card hyper_parameters")
     ap.add_argument("--class", dest="cls", default=None, help="model class import string (default: card)")
-    ap.add_argument("--singles", default="all", help="'all' or a number of single substitutions to sample")
+    ap.add_argument("--singles", default="all", help="'all', 'none' or a number of single substitutions to sample")
+    ap.add_argument("--mutant-archives", default="",
+                    help="comma-separated archive file names (same folder as <archive>) whose variants are scored too")
     a = ap.parse_args()
 
     from proteingym.base.model import ModelCard
@@ -62,6 +64,31 @@ def main():
     rec = dict(tag=a.tag, archive=a.archive.name, model_class=a.cls or card.model_class,
                hp_overrides=json.loads(a.hp))
     t0 = time.time()
+    try:
+        _run(a, rec, hp, Model, dataset_to_evedesign, seqs_to_instances, Subsets, t0)
+    except Exception as e:   # record the failure (time, memory, reason) and exit non-zero
+        import traceback
+        rec.update(status="failed", error=f"{type(e).__name__}: {str(e)[:500]}", t_total_s=round(time.time() - t0, 1))
+        rec["maxrss_self_gb"], rec["maxrss_children_gb"] = maxrss_gb()
+        (a.out / f"{a.tag}.failed.json").write_text(json.dumps(rec, indent=1))
+        traceback.print_exc()
+        log(f"FAILED {a.tag}: {rec['error']}")
+        return 1
+
+
+def assay_sequences(path: Path) -> list[str]:
+    """Variant sequences of an archive's assays, read from the zip (no MSA/structure loading)."""
+    import io
+    import zipfile
+    out = []
+    with zipfile.ZipFile(path) as z, zipfile.ZipFile(io.BytesIO(z.read("dataset.pgdata"))) as inner:
+        for n in inner.namelist():
+            if n.startswith("assays/") and n.endswith(".csv"):
+                out += pd.read_csv(io.BytesIO(inner.read(n)), usecols=["sequence"]).sequence.tolist()
+    return out
+
+
+def _run(a, rec, hp, Model, dataset_to_evedesign, seqs_to_instances, Subsets, t0):
     subsets = Subsets.from_path(a.archive)
     target = subsets.dataset.assay_targets[0].name
     system, _, test = dataset_to_evedesign(subsets, split=None, target=target, test_fold=None)
@@ -73,14 +100,19 @@ def main():
 
     # mutants: archive variants + singles + WT
     inst, _, _, _ = test.select(name=target, drop_missing=False)
+    variant_seqs = ["".join(x[0].rep) for x in inst]
+    for extra in filter(None, a.mutant_archives.split(",")):
+        if extra != a.archive.name:
+            variant_seqs += assay_sequences(a.archive.parent / extra)
     arch = set()
-    for x in inst:
-        s = "".join(x[0].rep)
+    for s in variant_seqs:
         d = [f"{w}{i + 1}{m}" for i, (w, m) in enumerate(zip(wt, s)) if w != m]
         if d and len(s) == L:
             arch.add(":".join(d))
     singles = [f"{w}{i + 1}{m}" for i, w in enumerate(wt) for m in AA if m != w]
-    if a.singles != "all":
+    if a.singles == "none":
+        singles = []
+    elif a.singles != "all":
         rng = np.random.default_rng(0)
         singles = list(rng.choice(singles, size=min(int(a.singles), len(singles)), replace=False))
     muts = sorted(set(singles) | arch, key=lambda m: (int(m.split(":")[0][1:-1]), m))
@@ -117,7 +149,7 @@ def main():
     s = np.array([np.nan if x.score is None else float(x.score) for x in scored])
     df = pd.DataFrame(dict(mutant=muts, in_archive=[m in arch for m in muts], score=s[:-1], pred=s[:-1] - s[-1]))
     df.to_csv(a.out / f"{a.tag}.csv", index=False)
-    rec.update(score_wt=float(s[-1]), n_nan=int(np.isnan(df.pred).sum()), n_archive=len(arch),
+    rec.update(status="ok", score_wt=float(s[-1]), n_nan=int(np.isnan(df.pred).sum()), n_archive=len(arch),
                t_total_s=round(time.time() - t0, 1))
     rec["maxrss_self_gb"], rec["maxrss_children_gb"] = maxrss_gb()
     (a.out / f"{a.tag}.json").write_text(json.dumps(rec, indent=1))
