@@ -57,42 +57,32 @@ def main():
     runs = pd.DataFrame(runs)
     runs.to_csv(val / "runs.tsv", sep="\t", index=False)
     pairs = []
+    order = ["filtered", "bits", "off", "zoo"]
     for (m, u), g in runs[runs.status == "ok"].groupby(["model", "uniprot"]):
-        ref = val / f"{m}__{u}__filtered.csv"
-        if not ref.exists():
-            ref = val / f"{m}__{u}__off.csv"   # T1-only proteins
-        if not ref.exists():
-            continue
-        f = pd.read_csv(ref).set_index("mutant")
-        for v in g.variant:
-            if f"{m}__{u}__{v}.csv" == ref.name:
-                continue
-            o = pd.read_csv(val / f"{m}__{u}__{v}.csv").set_index("mutant").reindex(f.index)
-            for subset, mask in (("all", np.ones(len(f), bool)), ("archive", f.in_archive.values)):
-                r, rho, n, mx = corr(f.pred.values[mask], o.pred.values[mask])
-                pairs.append(dict(model=m, uniprot=u, a=ref.stem.split("__")[2], b=v, subset=subset, pearson=r, spearman=rho,
-                                  n=n, max_abs_diff=mx, nan_a=int(np.isnan(f.pred.values[mask]).sum()),
-                                  nan_b=int(np.isnan(o.pred.values[mask]).sum())))
-        t1z, t1o = val / f"{m}__{u}__zoo.csv", val / f"{m}__{u}__off.csv"
-        if t1z.exists() and t1o.exists():   # T1: filter disabled vs the zoo model
-            z, o = pd.read_csv(t1z).set_index("mutant"), pd.read_csv(t1o).set_index("mutant")
-            o = o.reindex(z.index)
-            r, rho, n, mx = corr(z.pred.values, o.pred.values)
-            pairs.append(dict(model=m, uniprot=u, a="off", b="zoo", subset="all", pearson=r, spearman=rho, n=n,
-                              max_abs_diff=mx, nan_a=int(o.pred.isna().sum()), nan_b=int(z.pred.isna().sum())))
-        if m == "eve":
+        vs = sorted(set(g.variant), key=lambda v: order.index(v) if v in order else 99)
+        dfs = {v: pd.read_csv(val / f"{m}__{u}__{v}.csv").set_index("mutant") for v in vs}
+        idx = dfs[vs[0]].index
+        arch = dfs[vs[0]].in_archive.values
+        for i, a in enumerate(vs):
+            for b in vs[i + 1:]:
+                x, y = dfs[a].pred.reindex(idx).values, dfs[b].pred.reindex(idx).values
+                for subset, mask in (("all", np.ones(len(idx), bool)), ("archive", arch)):
+                    r, rho, n, mx = corr(x[mask], y[mask])
+                    pairs.append(dict(model=m, uniprot=u, a=a, b=b, subset=subset, pearson=r, spearman=rho, n=n,
+                                      max_abs_diff=mx, nan_a=int(np.isnan(x[mask]).sum()),
+                                      nan_b=int(np.isnan(y[mask]).sum())))
+        if m == "eve" and not u.endswith("T1"):
             npid, d = popeve_eve(u)
             if d is None:
                 continue
-            d = d.set_index("mutant").reindex(f.index)
-            for v in g.variant:
-                o = pd.read_csv(val / f"{m}__{u}__{v}.csv").set_index("mutant").reindex(f.index)
-                for subset, mask in (("all", np.ones(len(f), bool)), ("archive", f.in_archive.values)):
-                    r, rho, n, _ = corr(o.pred.values[mask], d.EVE.values[mask])
-                    pairs.append(dict(model=m, uniprot=u, a=v, b=f"popEVE_release_EVE({npid})", subset=subset,
-                                      pearson=r, spearman=rho, n=n,
-                                      nan_a=int(np.isnan(o.pred.values[mask]).sum()),
-                                      nan_b=int(np.isnan(d.EVE.values[mask]).sum())))
+            e = d.set_index("mutant").EVE.reindex(idx).values
+            for a in vs:
+                x = dfs[a].pred.reindex(idx).values
+                for subset, mask in (("all", np.ones(len(idx), bool)), ("archive", arch)):
+                    r, rho, n, _ = corr(x[mask], e[mask])
+                    pairs.append(dict(model=m, uniprot=u, a=a, b=f"popEVE_EVE({npid})", subset=subset,
+                                      pearson=r, spearman=rho, n=n, nan_a=int(np.isnan(x[mask]).sum()),
+                                      nan_b=int(np.isnan(e[mask]).sum())))
     pairs = pd.DataFrame(pairs)
     pairs.to_csv(val / "pairs.tsv", sep="\t", index=False)
     pd.set_option("display.width", 250); pd.set_option("display.max_columns", 40)

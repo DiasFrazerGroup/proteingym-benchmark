@@ -250,6 +250,82 @@ occupied). Table: `$WORK/models/msa_filter/eve_sweep.tsv`.
   (N/L 0.55), PKD1 4,186 of 883,818 (N/L 1.0), LRP2 18,958 of 768,451 (L_cov 0.66 at 0; 10,474 at 0.05 with L_cov 0.88),
   LPA 311 (kringle repeats). Up to 2,300 aa most proteins keep N/L >= 5 (ABCA1 2,261 aa: 18,775 at 0.5, L_cov 0.83).
 
+### 3.6 EVE-protocol MSA filter inside the alignment-model wrappers (2026-11-17)
+
+**Rules (user, 2026-11-17).** This is a benchmark of existing models: innovations minimal, the starting point is the
+EVE/popEVE implementation, every model treated the same and not improved, no benchmark pairs lost to model limits (a
+model that cannot score a protein gets NaN there and is reported with its coverage). Where EVE (2021 preprint/code)
+and popEVE differ, take the one with higher coverage ("popEVE choice"); where both are silent, take the simplest
+option ("ours"). Earlier decisions kept: ColabFold MSA as the base alignment, the same filtered alignment for every
+MSA model, filter model-side (card hyper-parameters, no derived data), no MSA segments, compaction later (§10).
+
+**Sources checked.** EVE preprint Methods (bioRxiv 10.1101/2020.12.21.423785): hmmer, 5 iterations, UniRef100;
+"we explore a range of bit scores, using 0.3 bits per residue as a reference"; keep sequences aligned to >= 50% of the
+target and columns with >= 70% residue occupancy; "prioritize alignments with coverage L_cov >= 0.8L and 100,000 >=
+N >= 10L ... if these requirements cannot be met, we sequentially relax them down to L_cov >= 0.7L and N <= 200,000",
+then "the best available" alignment; weights with Hamming cutoff T = 0.2. EVE code (`utils/data_utils.py`,
+OATML-Markslab/EVE commit 460d70e, vendored verbatim in evedesign 0.0.6 `models/evemodel/`): fragments = gap fraction
+> 0.5 (`threshold_sequence_frac_gaps`), focus columns = gap fraction <= 0.3 (`threshold_focus_cols_frac_gaps`),
+sequences with an indeterminate residue (B, J, X, Z, ...) in a focus column removed, theta 0.2. popEVE paper (Nat.
+Genet. 2025, Europe PMC full text): EVcouplings/jackhmmer, UniRef100 March 2022, T = 0.2; no alignment-selection or
+column rules beyond EVE's. popEVE release (`popEVE_ukbb_20250312.zip`, 203 random proteins + APOA1, PCSK9, ABCA1):
+the `EVE` column is present at 99.5% of positions (one protein all-NaN), including positions whose `gap frequency`
+is up to 1.0 (in 80% of proteins the scored maximum is > 0.9); on average 24% of positions have gap frequency > 0.3,
+so EVE's code default (0.3) would leave them unscored. The release therefore models all columns, i.e.
+`threshold_focus_cols_frac_gaps = 1.0`, which is the zoo `eve` card's value.
+
+**Filter (`msa_filter.py`, identical copy in every `*_filtered` folder).**
+
+| Step | Rule | Source |
+|---|---|---|
+| Insertions | lowercase / '.' removed, match states only; rows of the wrong length dropped (malformed) | EVE (a2m match states) |
+| Fragments | gap fraction > 0.5 dropped (`min_seq_coverage` 0.5) | EVE code + paper (50% of the target) |
+| Indeterminate residues | rows with any letter other than the 20 amino acids and '-' dropped | EVE code (all columns are focus columns, see Columns) |
+| Query | row 0 always kept, first | EVE / zoo wrappers |
+| Bit score | bits/residue = MMseqs2 bit score (a3m header) / L; N(t), L_cov(t) for each t in `bits_thresholds` (0–1.5) | EVE paper (sweep); MMseqs2 scale is a deviation |
+| L_cov | columns with >= 70% residue occupancy among the rows kept at t (`col_occupancy`) | EVE paper |
+| Step 0 "strict" | L_cov >= 0.8 L and 10 L <= N <= 100,000 | EVE paper |
+| Step 1 "relaxed" | L_cov >= 0.7 L and 10 L <= N <= 200,000 | EVE paper (relaxation limits) |
+| Step 2 "low_depth" | L_cov >= 0.7 L, 2 <= N <= 200,000 (10 L floor dropped) | ours ("best available": coverage first, as the paper prioritises coverage) |
+| Step 3 "low_lcov" | 2 <= N <= 200,000 | ours (deepest alignment) |
+| Step 4 "subsample" | no t gives N <= 200,000: highest t, then uniform random subsample of 200,000 rows (query first, `seed`) | ours (last resort; EVE raises the threshold, steps 0–3 do that) |
+| Which t | the lowest qualifying t (deepest alignment) within the first step that has one | ours (paper silent) |
+| Depth > 100k | handled by the threshold (steps 0/1), not by subsampling | EVE |
+| Columns | all kept and passed to the model; L_cov only selects t | popEVE choice (release scores 100% of positions) |
+| Column use inside a model | the zoo model's own: EVE card `threshold_focus_cols_frac_gaps: 1.0` (popEVE-like); EVmutation excludes > 50%-gap columns itself | zoo cards unchanged |
+| Weights | each model's own (EVE theta 0.2 as in the paper; RSALOR 0.8, StructureDCA 0.9, EVmutation 0.8) | zoo cards unchanged |
+| Unscored variants | NaN (EVmutation gap-excluded columns, RSALOR no-RSA, GEMME NA, EVE non-focus) instead of the wrappers' WT/0 | user rule |
+
+Per protein the wrapper logs and appends to `<output>/msa_filter_stats.jsonl`: rows in, rows dropped (bad length,
+fragments, indeterminate), rows after the row filters, bit-score source, chosen threshold, N, N/L, L_cov (fraction),
+relaxation step and rule, subsampled, quality flag (`ok`, `low_depth` = N < 10 L, `low_lcov` = L_cov < 0.7 L), the
+whole sweep (N, L_cov per t), time and peak RSS.
+
+**Deviations from EVE/popEVE (all forced by the data or the zoo, none an improvement):**
+
+| Deviation | Reason |
+|---|---|
+| ColabFold/MMseqs2 search (UniRef100 + environmental DBs, up to 1.16M rows) instead of EVcouplings/jackhmmer, 5 iterations, UniRef100 2022 | user data decision (2026-11-09, PG2 protocol); re-searching is a data change |
+| Bit scores on the MMseqs2 scale (bits/residue = header bit score / L), thresholds swept 0–1.5; EVE's 0.3 bits/residue reference does not transfer (an exact self-hit of APOA1 scores 0.53 bits/residue) | MMseqs2 instead of HMMER |
+| Thresholds are post-hoc cuts of one search, not separate jackhmmer runs at each bit score (EVE re-searches, so each threshold also changes the profile) | one ColabFold search per protein |
+| **Bit scores are not in the benchmark archives**: proteingym-base `MSA.dump` writes `seq_<i>` headers (`proteingym/base/msa.py`), so the dataset MSA has no bit scores and the selection is skipped (rule `no_bitscores`: row filters + 200k cap only) | archive format; fix is data-side (keep the headers when building archives / upstream `MSA.dump`) — **open decision** |
+| Validation reads the original ColabFold a3m (`a3m_headers_dir`, matched by query sequence, every row verified against the dataset MSA) to get the bit scores | stopgap to test the protocol; not for benchmark runs (reads data outside the archive) |
+| Steps 2–4 and "lowest qualifying t" | paper silent ("best available") |
+| Columns all kept (EVE code default 0.3 would drop ~24% of positions) | popEVE choice |
+| Per-model weighting and column handling unchanged | fairness: models not modified |
+
+**Bit scores in the wrapper.** proteingym-base keeps the raw a3m bytes (`MSA.file`), but
+`evedesign.proteingym.msa_to_sequences` builds `Sequence(id=None)`. Each `*_filtered` package's `__init__.py` calls
+`install_header_hook()`, which wraps that function (the shared runner imports the model package before converting the
+dataset) and attaches the per-row bit scores (`pg_bitscores`) to the `Sequences`; ids stay None, so the wrapped models
+see exactly what they saw before. With today's archives the headers are `seq_<i>` and the scores are all NaN, which
+the filter treats as "no bit scores". `a3m_headers_dir` (default null) is the validation stopgap above.
+
+**NaN in the pipeline.** Checked on APOA1: a NaN prediction survives `predictions_delta` -> `dump` -> reload as a
+float NaN (not null), and proteingym-base's `metric_spearman` then returns NaN for that dataset (scipy propagates).
+The clinical export (`export_scores.py` -> Genebass evaluation) drops NaN rows (missing for that model, coverage
+reported). PG2 metrics would need a NaN policy before benchmark runs (open decision 5, §8).
+
 ## 4. Validation protocol
 
 Every change is validated before any benchmark run:
@@ -276,9 +352,23 @@ Planned folders (copies of the zoo folder, same Dockerfile/Singularity.def/lockf
 | `models/esmc_window` | `ESMCWindow` | zoo `esmc` |
 | `models/saprot_window` | `SaProtWindow` | zoo `saprot` |
 | `models/esm-if1_window` | `ESMIF1Window` | zoo `esm-if1` |
+| `models/rsalor_filtered` | `RSALORFiltered` (`filtered_model.py`) | zoo `rsalor` (`model.py` copied verbatim) |
+| `models/structuredca_filtered` | `StructureDCAFiltered` | zoo `structuredca` (`model.py` copied verbatim) |
+| `models/evmutation_filtered` | `EVmutationFiltered` | `evedesign.models.evcouplings:EVcouplingsPLM` |
+| `models/eve_filtered` | `EVEFiltered` | `evedesign.models.eve:EVE` (evedesign 0.0.6) |
+| `models/evmutation2_filtered` | `EVmutation2Filtered` | `evedesign.models.evmutation2:EVmutation2` (not tested: ~1,000 aa GPU limit) |
+| `models/gemme_filtered` | `GEMMEFiltered` | zoo `gemme` (`model.py` copied verbatim; not tested: image does not build) |
 
 Shared logic is duplicated per folder to keep folders self-contained: `window.py` (PLM windows, `esm2_window`,
-`esmc_window`), `fragments.py` (structure placement and most-central assignment, `saprot_window`, `esm-if1_window`).
+`esmc_window`), `fragments.py` (structure placement and most-central assignment, `saprot_window`, `esm-if1_window`),
+`msa_filter.py` (EVE-protocol MSA filter, NaN for unscored variants, header hook; all six `*_filtered` folders, §3.6).
+The `*_filtered` folders are copies of the zoo folder (same Dockerfile/Singularity.def/lockfile, console script and
+package renamed), plus `__init__.py` (installs the header hook), `msa_filter.py`, `filtered_model.py`
+(`class XFiltered(MSAFilterMixin, X)`: filter keys popped from the card's `hyper_parameters`, the rest go to the zoo
+class unchanged) and `tests/test_msa_filter.py` (synthetic alignments: row filters, threshold choice, relaxation
+order, subsampling, missing bit scores). Validation: `scripts/clinical/models/msa_filter/validate_msa_filter.{py,sbatch}`
+(one build + score per job in the zoo image with the package mounted) and `compare_msa_filter.py` (local summary,
+popEVE comparison); outputs in `$WORK/models/msa_filter/val/`.
 Validation scripts and job wrappers: `scripts/clinical/models/validate_{plm,struct}_windows.{py,sbatch}` (run in the
 prototype's zoo images with the new package mounted on `PYTHONPATH`; proper images still to build). Outputs in
 `$WORK/models/`, job IDs in `$WORK/logs/jobs.txt`. Upstream route later: windowed `score_mutants` in evedesign's `ESM2` would fix `esm2` and
@@ -289,6 +379,12 @@ prototype's zoo images with the new package mounted on `PYTHONPATH`; proper imag
 - Containers: Apptainer, built from each folder's `Singularity.def` with `apptainer build --fakeroot` on the GPU
   node; the prototype's images are in `project/proteingym_clinical/containers/`.
 - GPU: partition `gpu`, `--gres=gpu:7g.80gb:1` (full H100). All compute as sbatch, never in the interactive session.
+  GPU jobs are limited to 12 h (`--time` above 12:00:00 is rejected for every QoS) and by a group GRES limit
+  (`AssocGrpGRES`: a third 3g.40gb job waits). EVE trains 400k steps at ~79 it/s (L 267) and ~38 it/s (L 692) on
+  3g.40gb.
+  GPU jobs are limited to 12 h (`--time` above 12:00:00 is rejected for every QoS) and by a group GRES limit
+  (`AssocGrpGRES`: a third 3g.40gb job waits). EVE trains 400k steps at ~79 it/s (L 267) and ~38 it/s (L 692) on
+  3g.40gb.
 - One container start per model for many archives (`proteingym_clinical/genebass/scripts/batch_train.py`: identical
   outputs, 1.5 s instead of 37 s overhead per protein).
 - Archives: `/no_backup/diasfrazer/egalpern_pgb_clinical/genebass/splits_layers/` (final), or the no-MSA copies in
@@ -321,6 +417,11 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 5. Missing predictions in the metric: drop the variant for that model (current evaluation) or penalise coverage.
 6. ~~Region archives as derived datasets~~ **decided 2026-11-16 (user):** no derived datasets; region policy inside
    the alignment-model wrappers, declared on the card (§3.4, §10). Region archives stay only for T5/first runs.
+7. **Bit scores for the EVE alignment selection (2026-11-17):** the archives' MSAs have `seq_<i>` headers
+   (proteingym-base `MSA.dump`), so `*_filtered` can only apply the row filters on benchmark archives. Keep the
+   ColabFold headers in the archives (data side), or accept row filters only (§3.6, §10).
+8. EVE columns: popEVE-like all columns (`threshold_focus_cols_frac_gaps: 1.0`, zoo card) kept; EVE 2021 code
+   default 0.3 would leave ~24% of positions unscored (§3.6).
 
 ## 9. Experiment log
 
@@ -340,6 +441,7 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 | 2026-11-16 | esm-if1_window, every archive (job 31923537, 3g.40gb) | T1 1.8e-4 **PASS** (window = L·(zoo − zoo_wt)); vs prototype r 1.00000 on all 5,840 variants (max 0.03 on long proteins); same variant across archives: spread 4e-3 (batch numerics); one caching-allocator OOM warning on APOB, recovered | `$WORK/models/struct_windows/esmif1/` |
 | 2026-11-16 | Alignment-model images (job 31923582, genoa64 CPU, `build_images.sbatch`) | rsalor built (3 min); gemme failed: download server gave an empty reply (`curl: (52)`), retry; others in progress | `/no_backup/diasfrazer/egalpern_pgb_clinical/containers/` |
 | 2026-11-16 | Per-variant comparison with earlier implementations (`scripts/clinical/models/export_scores.py`) | see "T2/T3 results" below | — |
+| 2026-11-17 | `*_filtered` alignment models (EVE-protocol MSA filter, §3.6) + validation (rsalor, structuredca, evmutation, eve) | T1 PASS on 4 models; filter stats, correlations, time/memory, EVE vs popEVE: "MSA filter results" below; archives carry no bit scores (open decision) | `$WORK/models/msa_filter/val/` |
 
 ### T2/T3 results (2026-11-16)
 
@@ -429,7 +531,111 @@ wrapper refactor: region 500 (evmutation2 needs ≤ 500 on a GPU slice anyway); 
 Full runs over all 66 proteins were dropped by user decision (2026-11-17: a few tests are enough). The one finished
 full run (rsalor, W = 1,000) stays exported as `predictions/v2__rsalor`.
 
+### MSA filter results (2026-11-17)
+
+`*_filtered` models (§3.6) in the zoo images with the package mounted (`validate_msa_filter.sbatch`, one build + score
+per job, jobs 31937458–31937558 in `$WORK/logs/jobs.txt`), summary by `compare_msa_filter.py`
+(`$WORK/models/msa_filter/val/{runs,pairs}.tsv`). Scored: all single substitutions (StructureDCA: a seeded sample of
+2,000 + the archive's Genebass mutants), pred = score − score(WT). Variants: **zoo** = unchanged zoo model on the
+unfiltered MSA (2 h cap); **off** = `*_filtered` with `msa_filter: false`; **filtered** = the card as it runs on the
+benchmark archives (no bit scores in the archives -> row filters only, rule `no_bitscores`); **bits** = the full EVE
+protocol with bit scores from the original ColabFold a3m (`a3m_headers_dir`, validation only).
+
+**Filter per protein** (rows in -> fragments / indeterminate dropped -> rows after row filters; then the threshold):
+
+| Protein (L) | Variant | Rows in | Fragments / indeterminate | After row filters | t (bits/res) | N | N/L | L_cov | Rule | Quality |
+|---|---|---|---|---|---|---|---|---|---|---|
+| APOA1 (267) | filtered = bits | 5,882 | 268 / 55 | 5,559 | 0.0 | 5,559 | 20.8 | 0.95 | strict | ok |
+| PCSK9 (692) | filtered | 531,387 | 430,931 / 175 | 100,281 | — | 100,281 | 144.9 | 0.48 | (no bit scores) | low_lcov |
+| PCSK9 (692) | bits | | | | 0.45 | 1,410 | 2.0 | 0.87 | low_depth | low_depth |
+| LDLR (860) | filtered | 656,624 | 563,104 / 831 | 92,689 | — | 92,689 | 107.8 | 0.78 | (no bit scores) | ok |
+| LDLR (860) | bits | | | | 0.5 | 17,000 | 19.8 | 0.88 | strict | ok |
+| IGF1R (1,367) | bits | 1,035,677 | 1,011,733 / 520 | 23,424 | 0.3 | 12,356 | 9.0 | 0.90 | low_depth | low_depth |
+| ABCA1 (2,261) | filtered | 1,100,277 | 1,066,651 / 911 | 32,715 | — | 32,715 | 14.5 | 0.66 | (no bit scores) | low_lcov |
+| ABCA1 (2,261) | bits | | | | 0.4 | 21,904 | 9.7 | 0.71 | low_depth | low_depth |
+
+(In `runs.tsv` the `filtered` rows show rule `low_lcov`/`relaxed` at t = 0: those runs predate the fix that reports
+all-NaN header scores as `no_bitscores`; the selected rows are the same.) The fragment filter alone removes 82–98% of
+the rows of the deep ColabFold MSAs. With bit scores the protocol mostly lands in "relaxed"/"low_depth": the
+10 L depth floor is the criterion that fails (PCSK9: coverage >= 0.7 L only at t >= 0.45 with 1,410 rows).
+
+**T1 (filter disabled = zoo):**
+
+| Model | Protein | Max abs diff off vs zoo | Note |
+|---|---|---|---|
+| rsalor | APOA1 | 0 (5,073 singles) | **PASS** |
+| structuredca | APOA1 | 1.2e-4 (2,017) | **PASS** (solver numerics) |
+| evmutation | APOA1 | 0 on the 5,016 scored; 57 NaN | **PASS**: the 57 NaN are mutations in gap-excluded columns, scored as WT by the zoo |
+| eve | APOA1 (2,000 training steps, 50 samples) | 0 (5,073) | **PASS** |
+
+**Filtered vs unfiltered** (all scored singles; Spearman on the archive's Genebass mutants in brackets):
+
+| Model | Protein | filtered vs zoo | bits vs zoo | filtered vs bits |
+|---|---|---|---|---|
+| rsalor | APOA1 | 0.994 (0.993) | = filtered | 1.000 |
+| rsalor | PCSK9 | 0.987 (0.972) | 0.918 (0.902) | 0.943 (0.953) |
+| rsalor | LDLR | 0.998 (0.997) | 0.990 (0.992) | 0.994 (0.992) |
+| rsalor | ABCA1 | 0.999 (0.998) | 0.999 (0.997) | 1.000 (0.999) |
+| structuredca | APOA1 | 0.993 (0.980) | = filtered | — |
+| structuredca | PCSK9 | 0.966 (0.965) | 0.791 (0.714) | 0.840 (0.761) |
+| structuredca | LDLR | 0.982 (0.972) | 0.925 (0.910) | 0.936 (0.917) |
+| structuredca | ABCA1 | zoo timed out (> 2 h) | — | 0.977 (0.969) |
+| evmutation | APOA1 | 0.9996 (0.997) | = filtered | — |
+
+**Time and memory** (build = filter + model fit; score = all singles or 2,000 for StructureDCA; peak RSS of the job
+from sacct, dominated by loading the archive's MSA: 1.1M rows ~10 GB for ABCA1):
+
+| Model | Protein (L) | Variant | N | Build (min) | Score (min) | Job peak RSS (GB) | Unscored (NaN) |
+|---|---|---|---|---|---|---|---|
+| rsalor | PCSK9 (692) | zoo / filtered / bits | 531k / 100k / 1.4k | 1.0 / 0.2 / 0.1 | 0.2 | 3.4 / 2.9 / 2.8 | 0 |
+| rsalor | LDLR (860) | zoo / filtered / bits | 657k / 93k / 17k | 3.9 / 0.3 / 0.3 | 0.3 | 4.6 / 3.7 / 3.7 | 0 |
+| rsalor | ABCA1 (2,261) | zoo / filtered / bits | 1.1M / 33k / 22k | 10.2 / 0.8 / 0.8 | 2.3 | 16.5 / 13.1 / 13.0 | 0 |
+| structuredca | PCSK9 | zoo / filtered / bits | | 35.2 / 7.2 / 0.4 | 0.7 | 3.7 / 2.8 / 2.8 | 0 |
+| structuredca | LDLR | zoo / filtered / bits | | 35.6 / 7.8 / 2.7 | 1.1 | 4.7 / 3.8 / 3.7 | 0 |
+| structuredca | ABCA1 | zoo / filtered / bits | | > 120 (timeout) / 15.6 / 12.0 | 8.0 | 21.8 / 13.2 / 13.0 | 0 |
+| evmutation | LDLR (860) | bits | 17,000 | 11.5 | 0.6 | 14.5 | 589 of 16,340 (3.6%) |
+| evmutation | IGF1R (1,367) | bits | 12,356 | 37.5 | 4.2 | 34.3 | 760 of 25,973 (2.9%) |
+| eve | APOA1 (267) | filtered (3g.40gb) | 5,559 | 93.3 (400k steps, 79 it/s) | 6.6 | 3.4 | 0 |
+
+**EVE vs the popEVE release `EVE` column** (same sequence as the release's RefSeq protein; the release score is
+higher = more damaging, ours is an ELBO difference, so the expected sign is negative):
+
+| Protein | Variant | N | Spearman all singles | Spearman Genebass mutants | Time |
+|---|---|---|---|---|---|
+| APOA1 (267) | filtered (= bits) | 5,559 | −0.854 (5,073) | −0.735 (30) | 1 h 41 min |
+| PCSK9 (692) | bits | 1,410 (Neff 112) | PENDING (job 31937557, 38 it/s) | | |
+| ABCA1 (2,261) | bits | 21,904 | PENDING (job 31937558, queued on the GPU group limit) | | |
+
+Reading:
+- The plumbing is exact (T1 on all four models) and every position stays scorable (no columns dropped; NaN only
+  where the model itself does not model a column: EVmutation 3–4% of singles).
+- Without bit scores (the archives today) the filter keeps all non-fragment rows and changes little
+  (Spearman vs zoo 0.97–0.999) while cutting StructureDCA time 4–5x and making ABCA1 feasible (zoo > 2 h).
+- With bit scores the EVE protocol can cut the alignment hard where coverage is patchy (PCSK9: 100k -> 1.4k rows,
+  Spearman vs zoo 0.79–0.92). Whether that helps is a benchmark question (Genebass), not answered here.
+- Memory is dominated by loading the archive's MSA into Python (proteingym-base + evedesign objects), not by the
+  models; filtered models on ABCA1 need ~13 GB, IGF1R EVmutation 34 GB (plmc on 1,367 columns).
+
 ## 10. Picking this up
+
+**Progress note (MSA filter, 2026-11-17):** `*_filtered` folders built and validated on a few proteins (§3.6, §9
+"MSA filter results"). **Next:**
+1. **Decision (data side): bit scores in the archives.** proteingym-base `MSA.dump` writes `seq_<i>` headers, so the
+   EVE threshold selection cannot run on the benchmark archives (it falls back to `no_bitscores`). Options: keep the
+   ColabFold headers when building archives (data branch; upstream fix of `MSA.dump`), or accept the row filters
+   only. `a3m_headers_dir` is a validation stopgap and must not be used in benchmark runs.
+2. **Compaction for proteins > 2,300 aa (EVE, EVmutation):** EVE builds the one-hot training set as float64
+   N x L x 20 and, for scoring, the whole mutant set at once (43k x 2,261 x 20 float64 = 15.5 GB for ABCA1); build it
+   per batch from an int8 N x L matrix (training) and per scoring batch; weights in blocks. EVmutation: plmc memory
+   grows with L^2 q^2 (couplings), measure on one > 2,300 aa protein after compaction. Not done (user: later step).
+3. **RSALOR / StructureDCA above 2,700 aa:** they need one full-length single-chain structure, AFDB gives fragments
+   only. Decide between most-central fragment (consistent with the structure models, §3.2) and NaN with coverage
+   reported (benchmark rule: no new tricks); the region tiling of §3.4 is not used (user decision).
+4. EVE: full EVE runs on all proteins <= 2,300 aa only after (1); compare with the popEVE release per protein.
+5. NaN policy for the PG2 metrics (§3.6 "NaN in the pipeline", §8 item 5).
+6. Images for the `*_filtered` folders (`build_images.sbatch rsalor_filtered ...`); validation ran in the zoo
+   images with the package mounted. GEMME still has no image (download server), `gemme_filtered` untested;
+   `evmutation2_filtered` untested (~1,000 aa GPU limit, T5).
 
 **Progress note (T5, alignment models, 2026-11-17):** T5 done (§9, T5 results). Region code in
 `scripts/clinical/models/regions/`, archives in `$WORK/models/regions/archives/`, predictions in
