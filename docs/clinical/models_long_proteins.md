@@ -202,6 +202,41 @@ back.
 Plumbing check (local, APOA1): one full-length region with `--min-cov 0` scored by rsalor equals the unchanged
 model on the original archive (max abs diff 0.0; rsalor drops duplicates itself).
 
+### 3.5 What EVE / popEVE did for the human proteome (checked 2026-11-17)
+
+User decision 2026-11-17: no short MSA segments; learn from the EVE/popEVE proteome run and apply it. The region
+work of §3.4 is stopped (the wrapper refactor agent was stopped before changing anything; region scripts stay as
+the T5 record).
+
+**Sources:** popEVE paper (Orenbuch et al., Nat. Genet. 2025, Methods "Multiple sequence alignments", Europe PMC
+PMC12695638); EVE preprint (Frazer et al., bioRxiv 10.1101/2020.12.21.423785, Methods); the popEVE v1.1 release in
+`/no_backup/diasfrazer/db/popeve/raw/popEVE_ukbb_20250312.zip` (18,331 RefSeq proteins).
+
+**Alignment protocol (EVE 2021, reused by popEVE):** EVcouplings pipeline, jackhmmer, 5 iterations, UniRef100
+(March 2022 for popEVE). Bit-score thresholds explored around 0.3 bits/residue; the chosen alignment has coverage
+L_cov >= 0.8 L and 10 L <= N <= 100,000, relaxed step by step when no threshold satisfies it. Sequences kept only if
+they align to >= 50% of the target; columns kept with >= 70% occupancy. Sequence weights with identity threshold
+T = 0.2. Canonical UniProt isoform. Ours: ColabFold/MMseqs2 on UniRef100, no filtering, up to 1.16M rows (user's data
+decision 2026-11-09, PG2 protocol).
+
+**Long proteins: they were not solved, they were left out.**
+- EVE 2021: "avoided extremely large genes such as TTN"; no explicit cutoff stated.
+- popEVE paper: no long-protein handling described (no segments, windows or domains).
+- popEVE release: the longest protein is 2,302 aa (NP_057425.3); 131 proteins > 2,000 aa, 41 > 2,200 aa, none above
+  2,302. EVE covers 100% of positions in every file checked, i.e. full-length models, no segments. ESM-1v is missing
+  for several proteins of 1,800–2,230 aa (popEVE falls back to EVE there).
+- Consistent with our layer coverage: popEVE lacks APOB (4,563), LRP2 (4,655), PKD1 (4,303), SPTA1 (2,419) and STAB1
+  (2,570), all above 2,302 aa.
+
+**What this means for us:**
+1. Up to ~2,300 aa, the EVE recipe is full length with a filtered, capped alignment (N <= 100k, sequences >= 50%
+   coverage, columns >= 70% occupancy). This filtering can be done inside the model wrapper on our ColabFold MSA
+   (model-side, no derived data). Re-searching with jackhmmer would be a data change (user decision needed).
+2. Above ~2,300 aa there is no precedent in EVE/popEVE. Full-length options: EVE with the one-hot built per batch
+   (int8 N x L instead of float64 N x L x 20: ~0.5 GB at N = 100k, L = 4,600; VAE input 92k, first layer ~0.2B
+   parameters, fits a 7g.80gb slice [estimate]); sequence weights on GPU in blocks or by MMseqs2 clustering.
+3. Validation available locally: our EVE on proteins <= 2,300 aa vs the release's `EVE` column, per protein.
+
 ## 4. Validation protocol
 
 Every change is validated before any benchmark run:
