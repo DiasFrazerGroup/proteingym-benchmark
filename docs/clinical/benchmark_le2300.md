@@ -95,3 +95,37 @@ filter) and EXOC3L4 (722 aa, 473 sequences).
 
 Note: with the EVE filter, the long multidomain proteins keep few sequences (APOB 2,533, N/L 0.55; PKD1 4,047, N/L
 0.94), so even when compaction makes them run, their alignment-model scores carry a weak-alignment flag.
+
+## 7. Results with the filtered alignment models (2026-11-18)
+
+User decision 2026-11-17: no imputation. Main columns = variants scored by every benchmark model (zoo models:
+esm2_window, esmc_window, saprot_window, esm-if1_window, rsalor_filtered, structuredca_filtered,
+evmutation_filtered; EVE not yet run on the set) in proteins <= 2,300 aa and <= 2,700 aa; extra column = each model on
+every variant it scores. References (layers, allele frequency) are scored on the same common rows where they have a
+score; they do not define the common set. Script: `proteingym_clinical/genebass/scripts/17_eval_common_variants.py`,
+output `results/genebass_common_variants.tsv`.
+
+Filtered models on Genebass (`predictions/v2__*_filtered/status.tsv`): rsalor, structuredca and evmutation score 63 of
+66 proteins. APOB, LRP2, PKD1 fail as model limitations: rsalor/structuredca need one full-length structure (AFDB
+has only fragments above 2,700 aa); plmc (EVmutation) segfaults above ~3,100 modelled sites (32-bit parameter
+count). EVmutation leaves 264 of 4,653 protein mutants unscored (gap-excluded columns, NaN).
+
+Common rows: <= 2,300 aa 5,468 of 5,744 (95.2%), 97 pairs; <= 2,700 aa 5,750 of 6,066 (94.8%), 100 pairs. The rows
+lost are EVmutation's unscored positions.
+
+| Model | <= 2,300 aa common | <= 2,700 aa common | Max coverage (pairs) |
+|---|---|---|---|
+| AlphaMissense (reference) | 2.510 | 2.441 | 2.695 (109) |
+| structuredca_filtered | 2.344 | 2.281 | 2.471 (100) |
+| evmutation_filtered | 2.269 | 2.208 | 2.208 (100) |
+| popEVE (reference) | 2.241 | 2.241 (97 pairs) | 2.372 (97) |
+| esm2_window | 2.191 | 2.132 | 2.403 (109) |
+| esmc_window | 2.094 | 2.037 | 2.181 (109) |
+| rsalor_filtered | 2.054 | 1.998 | 2.151 (100) |
+| Allele frequency (reference) | 1.842 | 1.801 | 1.629 (109) |
+| CADD (reference) | 1.798 | 1.778 | 1.912 (109) |
+| saprot_window | 1.521 | 1.489 | 1.640 (109) |
+| esm-if1_window | 1.166 | 1.141 | 1.273 (109) |
+
+Every model loses ~0.1-0.2 on the common rows versus its own coverage: fewer rows per pair lowers -log10 P, and the
+removed rows (gap-heavy columns) carry signal. Rankings must be read within a column.

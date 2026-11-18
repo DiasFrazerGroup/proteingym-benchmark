@@ -37,7 +37,9 @@ def main():
                 failed = run / f"{tag}.failed.json"
                 if failed.exists():
                     j = json.loads(failed.read_text())
-                    rec.update(status="failed", reason=j.get("error"), t_total_min=round(j["t_total_s"] / 60, 1),
+                    note = run / f"{tag}.reason.txt"   # optional diagnosis written after inspecting the log
+                    reason = note.read_text().strip() if note.exists() else (j.get("error") or "")[:160]
+                    rec.update(status="failed", reason=reason, t_total_min=round(j["t_total_s"] / 60, 1),
                                maxrss_gb=max(j.get("maxrss_self_gb", 0), j.get("maxrss_children_gb", 0)))
                 else:
                     reason = (run / f"{tag}.reason.txt").read_text().strip() if (run / f"{tag}.reason.txt").exists() \
