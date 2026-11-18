@@ -609,7 +609,7 @@ higher = more damaging, ours is an ELBO difference, so the expected sign is nega
 |---|---|---|---|---|---|
 | APOA1 (267) | filtered (= bits) | 5,559 | −0.854 (5,073) | −0.735 (30) | 1 h 41 min |
 | PCSK9 (692) | bits | 1,410 (Neff 112) | −0.881 (13,148) | −0.887 (61) | 3 h 42 min (build 185 min at 38 it/s, score 36 min; 8.7 GB) |
-| ABCA1 (2,261) | bits | 21,904 | PENDING: job 31937558 trains at 12 it/s (~9 h); scoring 43k singles x 20k samples will not fit the 12 h GPU limit, so 31940397 (afternotok) rescores from the saved checkpoint `$WORK/models/msa_filter/val/ckpt/eve__O95477__bits.pt` | | |
+| ABCA1 (2,261) | bits | 21,904 (N/L 9.7) | −0.902 (42,959) | −0.893 (189) | ~18 h: training 31937558 timed out at 12 h after saving the checkpoint, scoring 31940397 6.1 h (43 GB host RAM) |
 
 Reading:
 - The plumbing is exact (T1 on all four models) and every position stays scorable (no columns dropped; NaN only
@@ -621,10 +621,41 @@ Reading:
 - **Header-restored archives (`hdr`, jobs 31940394/31940395, rsalor on PCSK9 and LDLR):** `bitscore_source =
   dataset a3m headers`, same threshold and N as `bits`, predictions identical (max abs diff 0). The card needs no
   `a3m_headers_dir` on these archives.
-- EVE with the protocol alignment agrees with the popEVE release at Spearman 0.85–0.88 (APOA1, PCSK9; one seed, our
-  ColabFold alignment vs their jackhmmer alignment), even for PCSK9 where the protocol keeps only 1,410 rows.
+- EVE with the protocol alignment agrees with the popEVE release at Spearman 0.85–0.90 (APOA1, PCSK9, ABCA1; one seed,
+  our ColabFold alignment vs their jackhmmer alignment), even for PCSK9 where the protocol keeps only 1,410 rows.
+  That is the alignment effect, not the code: see "EVE/EVmutation reproduce the released scores" below.
 - Memory is dominated by loading the archive's MSA into Python (proteingym-base + evedesign objects), not by the
   models; filtered models on ABCA1 need ~13 GB, IGF1R EVmutation 34 GB (plmc on 1,367 columns).
+
+**EVE / EVmutation reproduce the released scores (2026-11-18).** Goal: separate the implementation from the alignment.
+The zoo cards, unchanged, were run on the exact ProteinGym v1 alignments behind ProteinGym's released scores
+(`DMS_msa_files.zip`, ProteinGym v1.3 download; the a2m read as EVE reads it with `threshold_focus_cols_frac_gaps=1`:
+every column upper-cased, `.` -> `-`, fixed width; put into the ProteinGym2 draft archive in place of its MSA). ProteinGym's EVE
+settings match the zoo card (focus-gap threshold 1, default parameters, 20,000 samples, theta 0.2); it averages
+seeds 0–4 (`EVE_ensemble`), the zoo runs one seed. Jobs 31967282–85, 31974871; outputs, swap and compare scripts in
+`$WORK/models/eve_repro/` (`val/compare_pgv1.tsv`). Spearman on the assay's single mutants:
+
+| | GRB2 (217 aa, 33k seqs) | P53 (393 aa, 4.1k seqs, Neff ~144) |
+|---|---|---|
+| ours seed 42 vs released EVE_single / EVE_ensemble | 0.990 / **0.997** | 0.887 / 0.888 |
+| ours seed 0 vs released EVE_single / EVE_ensemble | | 0.940 / **0.951** |
+| ours seed 42 vs ours seed 0 (1,048 assay mutants / all 7,467 singles) | | 0.934 / 0.982 |
+| released EVE_single vs EVE_ensemble (noise bar) | 0.995 | 0.960 |
+| vs DMS: ours (s42, s0) / released single / ensemble | 0.579 / 0.586 / 0.590 | 0.522, 0.577 / 0.555 / 0.576 |
+| ours EVmutation vs released EVmutation | 0.996 (638 mutants at a2m upper-case columns) | 0.972 (Pearson 0.987) |
+
+- EVE reproduces within seed noise. On a deep alignment one seed matches the ensemble (0.997). On a shallow one,
+  single seeds scatter by 0.89–0.95 among themselves, ours and ProteinGym's alike.
+- EVmutation reproduces on the columns EVcouplings models. GRB2 positions 185–214 are lower case (non-focus) in
+  ProteinGym's a2m, yet the released EVmutation has real scores there (Spearman 0.95 with its EVE). They come from
+  some other run, which we cannot reproduce from this file (ours vs released 0.05 there). P53: our input keeps the 54
+  non-focus columns that EVcouplings drops.
+- Released single seed vs 5-seed ensemble over 96 human ProteinGym assays: median 0.987, min 0.876.
+- Release vs release, as a yardstick for the alignment effect: ProteinGym `EVE_ensemble` vs the popEVE release `EVE`
+  on 44 shared human proteins (full-length alignments; `$WORK/models/eve_repro/proteingym_vs_popeve_eve.tsv`): median
+  Spearman 0.937, 10th percentile 0.847, 16 of 44 below 0.90. Our 0.85–0.90 vs popEVE falls in this range.
+- Implication: a single EVE seed is noisy on shallow alignments (several Genebass proteins have N/L ~2–10). ProteinGym
+  averaged 5 seeds (seeds 0-4); doing so too would cost 5x the GPU time.
 
 ## 10. Picking this up
 
@@ -633,8 +664,8 @@ Reading:
 1. **Bit scores in the archives: done.** Header-restored archives are `genebass/splits_layers/` (old ones in
    `splits_layers_noheaders/`); checked (jobs 31940394/31940395): bit scores read from the archive, predictions
    identical to the `bits` runs. Upstream: `MSA.dump` in proteingym-base still drops headers (report it).
-   **Pending:** EVE ABCA1 (jobs 31937558, 31940397 rescoring from the checkpoint if the first times out); then rerun
-   `compare_msa_filter.py $WORK/models/msa_filter/val` and fill the ABCA1 row of the EVE table.
+   EVE ABCA1 done (−0.90 vs popEVE). EVE and EVmutation reproduce ProteinGym's released scores on its own
+   alignments (§9 "EVE / EVmutation reproduce the released scores"). Open: 1 vs 5 EVE seeds.
 2. **Compaction for proteins > 2,300 aa (EVE, EVmutation):** EVE builds the one-hot training set as float64
    N x L x 20 and, for scoring, the whole mutant set at once (43k x 2,261 x 20 float64 = 15.5 GB for ABCA1); build it
    per batch from an int8 N x L matrix (training) and per scoring batch; weights in blocks. EVmutation: plmc memory
