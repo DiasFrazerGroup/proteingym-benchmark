@@ -4,7 +4,7 @@
 set -euo pipefail
 source scripts/clinical/cards/env.sh
 date
-"$PY" -u scripts/clinical/msa/colabfold_search_uniref100.py "$QUERIES" "$DB/uniref100" "$WORK/msas" \
+"$PY" -u scripts/clinical/msa/colabfold_search_uniref100.py "$QUERIES" "$UNIREF100_DB" "$WORK/msas" \
   --mmseqs "$MMSEQS" --threads "$SLURM_CPUS_PER_TASK" --max-seqs 1000000 --split-memory-limit 300G \
   --work "$WORK/search_work/$(basename "$QUERIES" .fasta)"
 ls "$WORK/msas"/*.a3m | wc -l; du -sh "$WORK/msas"; date
