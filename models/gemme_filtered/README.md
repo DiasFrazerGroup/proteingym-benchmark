@@ -59,6 +59,9 @@ hyper_parameters:
     muscle_binary: "muscle"
     # -Xmx value passed to the JET2 JVM
     java_max_heap: "4096m"
+    # clinical: score = computePred.R output "evolEpi" (zoo wrapper) or "evolCombi" (GEMME combined model, as
+    # ProteinGym reports it). Both are benchmarked as separate prediction sets (user 2026-11-19)
+    output: "evolEpi"
 ---
 
 # Model Card for gemme_filtered (clinical: EVE-protocol alignment)

@@ -127,6 +127,7 @@ class GEMME(BaseModel, Scorer, MutationScorer, ConditionalMutationScorer):
         rscript_binary: str | PathLike = "Rscript",
         muscle_binary: str | PathLike = "muscle",
         java_max_heap: str = "4096m",
+        output: str = "evolEpi",
     ):
         """
         Instantiate a GEMME model.
@@ -154,7 +155,14 @@ class GEMME(BaseModel, Scorer, MutationScorer, ConditionalMutationScorer):
             muscle 5.x does not work)
         java_max_heap
             -Xmx value passed to the JET2 JVM invocation
+        output
+            clinical: which computePred.R output is the score. "evolEpi" (default, the zoo wrapper's choice:
+            global epistatic model) or "evolCombi" (GEMME's combined model, the score ProteinGym reports;
+            reproduces ProteinGym's released GEMME at Spearman 0.998, docs/clinical/models_long_proteins.md)
         """
+        if output not in ("evolEpi", "evolCombi"):
+            raise ValueError("output must be 'evolEpi' or 'evolCombi'")
+        self.output = output
         if n_iter < 1:
             raise ValueError("n_iter must be >= 1")
         if max_sequences < 3:
@@ -399,7 +407,7 @@ class GEMME(BaseModel, Scorer, MutationScorer, ConditionalMutationScorer):
         env = {**os.environ, "GEMME_PATH": str(self.gemme_path)}
         _run(cmd, cwd=tmp, log_file=tmp / f"{prot}.pred.log", env=env)
 
-        pred_file = tmp / f"{prot}_normPred_evolEpi.txt"
+        pred_file = tmp / f"{prot}_normPred_{self.output}.txt"
         if not pred_file.exists():
             raise ExternalToolError(
                 f"computePred.R did not produce {pred_file.name}; check {prot}.pred.log for details"
