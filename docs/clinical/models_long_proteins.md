@@ -665,7 +665,8 @@ seeds 0–4 (`EVE_ensemble`), the zoo runs one seed. Jobs 31967282–85, 3197487
    `splits_layers_noheaders/`); checked (jobs 31940394/31940395): bit scores read from the archive, predictions
    identical to the `bits` runs. Upstream: `MSA.dump` in proteingym-base still drops headers (report it).
    EVE ABCA1 done (−0.90 vs popEVE). EVE and EVmutation reproduce ProteinGym's released scores on its own
-   alignments (§9 "EVE / EVmutation reproduce the released scores"). Open: 1 vs 5 EVE seeds.
+   alignments (§9 "EVE / EVmutation reproduce the released scores"). Seeds: the zoo card's single seed is kept (user
+   2026-11-19: not our call; the number of seeds belongs to the model card, not the benchmark).
 2. **Compaction for proteins > 2,300 aa (EVE, EVmutation):** EVE builds the one-hot training set as float64
    N x L x 20 and, for scoring, the whole mutant set at once (43k x 2,261 x 20 float64 = 15.5 GB for ABCA1); build it
    per batch from an int8 N x L matrix (training) and per scoring batch; weights in blocks. EVmutation: plmc memory
