@@ -1,5 +1,10 @@
 # Genebass clinical datasets (VESM Fig. 6b setting)
 
+> **Final benchmark set (2026-11-19):** [genebass_le2700.csv](genebass_le2700.csv) (100 pairs, 63 proteins <= 2,700 aa,
+> archives with the EVE-protocol filtered alignment) and [genebass_le2700_msa_filter.tsv](genebass_le2700_msa_filter.tsv).
+> [genebass_fig6b.csv](genebass_fig6b.csv) indexes the full 109-pair build it is derived from. Details:
+> [docs/clinical/genebass.md](../../../docs/clinical/genebass.md#final-dataset--2700-aa-filtered-alignments).
+
 > **Superseded in part (2026-11-11):** the association data now come straight from Genebass (`scripts/clinical/genebass_api.py`), giving 109 archives / 66 proteins / 7,791 rows that reproduce the paper exactly on its own rows (`check_genebass.py --paper-rows-only`). The archives also carry ColabFold/UniRef100 MSAs and annotation layers. The current description is [docs/clinical/genebass.md](../../../docs/clinical/genebass.md). The text below describes the first, paper-sourced build (103 archives).
 
 Single-variant associations between missense variants and blood biomarkers in UK Biobank exomes

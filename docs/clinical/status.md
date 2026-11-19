@@ -35,12 +35,17 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
   proteins: 4 h 24 min on 64 CPUs, 38 GB.
 - [x] **Annotation layers** for any archive: AlphaMissense (its hg38 table), popEVE (v1.1 release zip) and CADD (dbNSFP 5.3.1a); pLDDT, full length and
   UniProt positions. Validated against the paper, AlphaMissense's own tables and raw AFDB files.
+- [x] **Final benchmark set (2026-11-19):** proteins <= 2,700 aa (100 pairs, 63 proteins, 6,066 rows), archives
+  with the EVE-protocol filtered alignment (model side's `msa_filter.py`, vendored verbatim): `$WORK/genebass/final_le2700/`
+  (868 MB), index `datasets/clinical/genebass/genebass_le2700.csv`, filter table `genebass_le2700_msa_filter.tsv`.
+  Built by `scripts/clinical/msa/filter_msas.py` (job 32028266), checked by `check_final.py` (job 32028275,
+  `CHECK FINAL OK`). See [genebass.md](genebass.md#final-dataset--2700-aa-filtered-alignments).
 - [x] **Reports:** [genebass.md](genebass.md), [long_proteins.md](long_proteins.md), this file. The project overview is in
   [project.md](project.md).
 
 ## Running
 
-Nothing on the data side. Model work (long proteins) is on branch `clinical/model-api`, documented in
+Nothing on the data side (final set built 2026-11-19, see Done). Model work (long proteins) is on branch `clinical/model-api`, documented in
 `docs/clinical/models_long_proteins.md` there.
 
 Finished 2026-11-16:
@@ -78,7 +83,10 @@ Earlier jobs: rebuild 31809884 and 31810199, MSAs for the 5 new proteins 3181019
 | Association data from Genebass itself, not the paper's extraction; the paper's tables only for groups and comparison | User, 2026-11-09 |
 | Headline metric on all 109 pairs and all rows; the paper's exact set recoverable from `in_vesm_paper` flags on pairs (index) and rows (assay) | User, 2026-11-16 |
 | Rows that can't be mapped to a UniProt wild type are dropped and listed | Ours (an archive needs a wild-type position) |
-| MSA: ColabFold on UniRef100 Jan 2026, no post-alignment filtering; ignore PG2's jackhmmer MSA | User, 2026-11-09 |
+| MSA: ColabFold on UniRef100 Jan 2026; ignore PG2's jackhmmer MSA | User, 2026-11-09 |
+| Final set capped at 2,700 aa (one full-length AFDB structure per protein; APOB, LRP2, PKD1 dropped) | User, 2026-11-19 |
+| Final archives store the EVE-protocol filtered alignment (same code as the models' filter, vendored verbatim), not the full ColabFold search | User, 2026-11-19 (replaces "no post-alignment filtering" for the final set) |
+| Index `archive` column points at the layered archives (`splits_layers/`); the final index at `final_le2700/` | Ours, 2026-11-19 (bug fix) |
 | ColabFold recipe adapted to UniRef100: no cluster expansion, no environmental DB, `--max-seqs 1e6` | Ours (inferred from PG2 depths), to confirm with the PG2 builders |
 | Archives keep the ColabFold a3m headers (bit scores for the EVE-protocol filter); `restore_msa_headers.py` after the layer step | User, 2026-11-17 |
 | Structures: AFDB v6, AFDB fragments for proteins > 2,700 aa; no AF2 re-folding | User, 2026-11-16 (replaces "PG2 protocol, AF2") |
@@ -97,6 +105,11 @@ Everything below runs on the CRG cluster as sbatch jobs on genoa64; don't comput
 Python: `/users/diasfrazer/egalpern/project/proteingym_clinical/env/bin/python` (proteingym-base and its
 dependencies). `WORK=/no_backup/diasfrazer/egalpern_pgb_clinical`. Job IDs are appended to `$WORK/logs/jobs.txt`.
 
+0. **Final set (current):** `$WORK/genebass/final_le2700/` + `datasets/clinical/genebass/genebass_le2700.csv`. To
+   rebuild it from `splits_layers/` alone: `sbatch scripts/clinical/msa/filter_msas.sbatch` (1.5 min), then the
+   `check_final.py` command in [genebass.md](genebass.md#final-dataset--2700-aa-filtered-alignments) (must print
+   `CHECK FINAL OK`). A full rebuild (`rebuild.sbatch`) now ends with these two steps. The steps below are the history
+   of the full 109-pair build.
 1. **Check the rebuild (job 31919891).**
    - `squeue -u $USER`, then `grep -E "MISMATCH|REPRODUCED|REBUILD OK|paper set" $WORK/logs/rebuild_31919891.log`.
    - Success: 109 archives in `$WORK/genebass/splits/` and `splits_layers/`, the line `paper set (in_vesm_paper):

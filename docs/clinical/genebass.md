@@ -163,13 +163,67 @@ must print `REPRODUCED`; the evaluation stage should offer the same switch.
   PrimateAI-3D cannot be redistributed. The score columns therefore need a licence decision before any public
   release.
 
+## Final dataset (<= 2,700 aa, filtered alignments)
+
+Decided 2026-11-19 (user): the benchmark is capped at **2,700 aa**, and the archives carry **only the alignment rows
+the models use** instead of the full ColabFold search. This is the final file set:
+
+| | |
+|---|---|
+| Index | [`genebass_le2700.csv`](../../datasets/clinical/genebass/genebass_le2700.csv): 100 archives (pairs), 63 proteins, 6,066 rows; paper set (`in_vesm_paper`) 94 pairs |
+| Per-protein alignment filter | [`genebass_le2700_msa_filter.tsv`](../../datasets/clinical/genebass/genebass_le2700_msa_filter.tsv) |
+| Archives | `$WORK/genebass/final_le2700/` (100 archives, 868 MB; the 109 full archives in `splits_layers/` are 7.1 GB) |
+| Groups | Lipid Metabolism 34, Liver Function 38, Renal Function 11, Other 17 |
+| Dropped (> 2,700 aa) | APOB (4,563 aa, 5 pairs), LRP2 (4,655, 3), PKD1 (4,303, 1): 9 pairs, 1,725 rows |
+
+- **Why 2,700 aa:** every protein up to 2,700 aa has exactly one full-length AlphaFold DB structure (checked on all
+  100 archives), so the structure models need no fragments, and every alignment model run so far fits. The model
+  side (branch `clinical/model-api`, `docs/clinical/models_long_proteins.md`) documents what each model would need
+  beyond the cap.
+- **Alignment = EVE-protocol filter of the ColabFold a3m**, the same code and parameters the alignment models use
+  (`msa_filter.py`, vendored byte for byte from the model branch, git blob `d9bd2d4b…`; `filter_msas.py` refuses to
+  run if the copy differs). Rows: fragments (> 50% gaps) and rows with non-standard residues removed, then the lowest
+  bit-score threshold (MMseqs2 bits / L) giving L_cov >= 0.8 L and 10 L <= N <= 100k, relaxed to L_cov >= 0.7 L and
+  N <= 200k, then the deepest alignment with L_cov >= 0.7 L. Each kept row is stored as its exact original a3m record
+  (header with bit score, insertions), in the original order, query first. All columns are kept.
+- **Result:** N from 123 to 99,164 rows (median 23,545; median N/L 37); a3m text 27.8 GB -> 1.9 GB. Rules: strict 44
+  proteins, relaxed 4, low_depth 15. Index columns: `msa_n_sequences` (filtered N), `msa_n_sequences_colabfold`,
+  `msa_bits_threshold`, `msa_N_over_L`, `msa_Lcov_frac`, `msa_filter_rule`, `msa_quality`.
+- **Weak alignments (`msa_quality = low_depth`, N < 10 L; scores kept, flag for interpretation):** LPA (N 123,
+  N/L 0.06: kringle repeats), PCSK9 2.0, GPLD1 2.2, CGNL1 2.8, PAPPA2 3.3, STAB1 4.0, B4GALNT3 4.3, MROH2A 5.2,
+  MAP3K15 6.4, ANGPTL3 6.6, ALB 6.7, NPC1L1 8.2, RBM47 8.4, IGF1R 9.0, ABCA1 9.7. (EXOC3L4, flagged in an earlier
+  no-bit-score run, keeps 13,224 rows with bit scores: ok.)
+- **Score layers unchanged.** AlphaMissense and CADD cover all 63 proteins. **popEVE has no scores for SPTA1 and
+  STAB1** (its release stops at 2,302 aa): those 3 pairs (322 rows) have NaN popEVE, so popEVE covers 97 of 100 pairs.
+- **The model-side filter on these archives is a no-op** (idempotent: it keeps every row), so `*_filtered` models
+  give the same predictions as on the full archives (RSALOR on APOA1, PCSK9, LDLR: max difference 4e-16), at a
+  fraction of the memory (0.3–0.5 GB instead of ~13 GB, most of it the MSA load).
+
+**Rebuild** (part of `scripts/clinical/msa/rebuild.sbatch`, after the header restore; alone:
+`sbatch scripts/clinical/msa/filter_msas.sbatch`, 1.5 min, 71 GB peak on 8 workers):
+
+```shell
+$PY scripts/clinical/msa/filter_msas.py --index datasets/clinical/genebass/genebass_fig6b.csv \
+  --archives $WORK/genebass/splits_layers --msa-dir $WORK/genebass_msas --out $WORK/genebass/final_le2700 \
+  --out-index datasets/clinical/genebass/genebass_le2700.csv \
+  --out-filter datasets/clinical/genebass/genebass_le2700_msa_filter.tsv --max-length 2700
+$PY scripts/clinical/msa/check_final.py --index datasets/clinical/genebass/genebass_le2700.csv \
+  --final $WORK/genebass/final_le2700 --source $WORK/genebass/splits_layers --msa-dir $WORK/genebass_msas \
+  --filter-table datasets/clinical/genebass/genebass_le2700_msa_filter.tsv     # must print CHECK FINAL OK
+```
+
+`check_final.py` (job 32028275, `CHECK FINAL OK`): every non-MSA entry (manifest, assays, sequences, structure,
+layers, slices) byte-identical to `splits_layers/`; one structure per archive; each MSA an ordered subset of the
+original a3m (exact records); filter idempotent; filter table rows and sha256 match.
+
 ## Files and locations
 
 | What | Where |
 |---|---|
+| **Final benchmark set** (<= 2,700 aa, filtered alignments) | `$WORK/genebass/final_le2700/` (868 MB) + `datasets/clinical/genebass/genebass_le2700.csv` |
 | Genebass tables + comparison | `$WORK/genebass_api/{genebass_api_hits.csv, genebass_api_betas.csv.gz, compare_vs_paper.md}` |
 | Archives, no MSA (Genebass source) | `$WORK/genebass_api/build/splits/`, with layers in `splits_layers/` |
-| **Final archives** (Genebass source, MSAs, layers, `in_vesm_paper` flags) | `$WORK/genebass/splits_layers/` (compressed, 6.6 GB), from rebuild job 31919891 |
+| Full archives (109 pairs, full ColabFold MSAs with headers, layers, `in_vesm_paper` flags); source of the final set | `$WORK/genebass/splits_layers/` (7.1 GB); index `genebass_fig6b.csv` (its `archive` column now points to `splits_layers/`) |
 | Same archives without layers, uncompressed | `$WORK/genebass/splits/` (63 GB; delete once the paper-set check passes) |
 | MSAs (66 proteins, 40 GB) | `$WORK/genebass_msas/` |
 | Earlier paper-sourced archives (superseded) | `datasets/clinical/genebass/splits/` (repo, git-ignored), `$WORK/genebass_nomsa_layers/` |
@@ -181,7 +235,8 @@ Code, all in `scripts/clinical/`:
 - `genebass_api.py`: Genebass tables and comparison.
 - `build_genebass.py`: archives.
 - `check_genebass.py`: Fig. 6b reproduction.
-- `msa/`: MSA chain.
+- `msa/`: MSA chain; `restore_msa_headers.py` (a3m headers back into the archives); `filter_msas.py`,
+  `check_final.py` and the vendored `msa_filter.py` (final <= 2,700 aa set).
 - `layers/`: score and mask layers.
 
 The `.sbatch` wrappers run each step on genoa64.
