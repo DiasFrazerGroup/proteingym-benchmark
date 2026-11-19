@@ -1,0 +1,35 @@
+[project]
+name = "proteingym-models-proteinmpnn"
+version = "0.1.0"
+description = "ProteinMPNN model (evedesign LigandMPNN wrapper) submitted to ProteinGym"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "typer~=0.16.0",
+    "proteingym-base",
+    # the mpnn extra installs torch and prody (structure parsing of the vendored LigandMPNN code)
+    "evedesign[mpnn]",
+    "polars[pyarrow]~=1.31.0",
+    "dill~=0.3.8",
+    "numpy",
+]
+
+[project.scripts]
+proteinmpnn = "proteingym.models.proteinmpnn.__main__:app"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.uv.sources]
+# same proteingym-base commit as the eve / pottsmpnn / esm-if1 images used for the clinical runs
+proteingym-base = { git = "https://github.com/ProteinGym/proteingym-base.git", rev = "8e0e29b608c60755f4341707292670cf14aa7992" }
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/proteingym"]
+
+[tool.ruff]
+line-length = 88
+
+[dependency-groups]
+dev = ["pytest~=8.4.1"]

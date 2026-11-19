@@ -1,0 +1,32 @@
+Bootstrap: docker
+From: python:3.12-slim-bookworm
+
+%setup
+    mkdir -p ${SINGULARITY_ROOTFS}/opt/program
+    cp -r src/ pyproject.toml uv.lock README.md ${SINGULARITY_ROOTFS}/opt/program/
+
+%post
+    apt-get update && apt-get install -y git curl ca-certificates && rm -rf /var/lib/apt/lists/*
+
+    # install uv (defaults to /root/.local/bin)
+    curl -LsSf https://astral.sh/uv/install.sh | sh
+
+    # move binaries to a globally accessible system path
+    mv /root/.local/bin/uv /root/.local/bin/uvx /usr/local/bin/
+
+    # sync dependencies
+    cd /opt/program
+    uv sync --no-cache
+
+    # ProteinMPNN vanilla weights v_48_020 (upstream default), pinned to the upstream commit and by sha256
+    PMPNN_URL=https://github.com/dauparas/ProteinMPNN/raw/8907e6671bfbfc92303b5f79c4b5e6ce47cdef57
+    mkdir -p /opt/program/data
+    curl -fL ${PMPNN_URL}/vanilla_model_weights/v_48_020.pt -o /opt/program/data/proteinmpnn_v_48_020.pt
+    echo "c9cb4a671d79604111231f8dbfc7c590e06f1197453b7a6854ac6661a642f5bd  /opt/program/data/proteinmpnn_v_48_020.pt" | sha256sum -c -
+
+%environment
+    export PATH="/opt/program/.venv/bin:$PATH"
+
+%runscript
+    cd /opt/program
+    exec uv run --no-sync proteinmpnn-window "$@"
