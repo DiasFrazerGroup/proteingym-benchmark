@@ -17,8 +17,10 @@ multi_y: false
 # There is only one officially released ESM-IF1 checkpoint size
 # (esm_if1_gvp4_t16_142M_UR50, 142M params) - no size-family/sweep logic.
 hyper_parameters:
-    # clinical (long proteins): residues per tile (tiles every window/2), structure fragments as separate frames
-    window: 1022
+    # clinical (long proteins): residues per tile (tiles every window/2), structure fragments as separate frames.
+    # 2700 = full length (user decision 2026-11-19): one AFDB structure (<= 2,700 aa) is scored whole, as the zoo
+    # model does; above 2,700 aa each mutant is scored on its whole most-central AFDB fragment (fragments < 2,700 aa)
+    window: 2700
     # sequences per forward pass
     batch_size: 16
     checkpoint_path: "/opt/program/data/esm_if1_gvp4_t16_142M_UR50.pt"
@@ -31,7 +33,7 @@ hyper_parameters:
 
 # Model Card for esm-if1_window (clinical: long proteins)
 
-Same model as the zoo's `esm-if1`, for proteins of any length: structures (AlphaFold DB fragments) are placed on the wild type by sequence; each mutant is scored in the fragment and the `window`-residue tile where it is most central, as log p(mutant | backbone) - log p(wild type | backbone) summed over the tile. For one full-length structure and L <= window this is L times the zoo score minus a per-protein constant. See `docs/clinical/models_long_proteins.md` (section 3.2).
+Same model as the zoo's `esm-if1`, for proteins of any length: structures (AlphaFold DB fragments) are placed on the wild type by sequence; each mutant is scored in the fragment and the `window`-residue tile where it is most central, as log p(mutant | backbone) - log p(wild type | backbone) summed over the tile. With `window: 2700` no protein is tiled: one full-length structure is scored whole (L times the zoo score minus a per-protein constant) and fragments are scored whole. Tiles of 1,022 changed the scores (median Spearman 0.62 vs full length on 15 proteins of 1,078–2,570 aa) and were dropped. See `docs/clinical/models_long_proteins.md` (section 3.2).
 
 ---
 
