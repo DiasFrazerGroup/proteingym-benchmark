@@ -328,6 +328,60 @@ float NaN (not null), and proteingym-base's `metric_spearman` then returns NaN f
 The clinical export (`export_scores.py` -> Genebass evaluation) drops NaN rows (missing for that model, coverage
 reported). PG2 metrics would need a NaN policy before benchmark runs (open decision 5, §8).
 
+### 3.7 Inverse-folding models: ProteinMPNN and PottsMPNN (2026-11-19)
+
+User request 2026-11-19: inverse-folding models beyond ESM-IF1, checked up to 2,700 aa and beyond. Rule as for the
+other structure models: one full-length AFDB structure (every protein <= 2,700 aa) -> the zoo model unchanged; AFDB
+fragments (> 2,700 aa: APOB, LRP2, PKD1) -> most-central fragment (`fragments.py`, copied verbatim, §3.2).
+
+- **ProteinMPNN (`models/proteinmpnn`, new zoo folder).** `evedesign.models.mpnn:LigandMPNN` with ProteinMPNN
+  weights `v_48_020` (48 neighbours, 0.20 A noise; upstream default of both ProteinMPNN and LigandMPNN), from
+  dauparas/ProteinMPNN commit 8907e66 (byte-identical to files.ipd.uw.edu/pub/ligandmpnn/proteinmpnn_v_48_020.pt),
+  sha256 pinned, downloaded at image build. Score = mean log-likelihood of the sequence given the backbone, decoded
+  in one random order (`score(..., use_sequence=True)`), the quantity of ProteinGym's ProteinMPNN baseline
+  (`compute_fitness.py`, which draws a new random order per mutant). The wrapper's `fix_full_decoding_order` draws
+  the order with an unseeded `torch.randn`; the only addition (`model.py`, class `ProteinMPNN`) seeds torch before
+  build (`seed: 0`), so scores are reproducible. Same proteingym-base commit as the eve/pottsmpnn/esm-if1 images
+  (pinned in `pyproject.toml`).
+- **`proteinmpnn_window`:** one structure -> zoo unchanged. Fragments: each fragment renumbered onto the wild type
+  and the zoo model built on it (own backbone, own decoding order from `seed`); mutant scored in its most-central
+  fragment as n_fragment x (mean_ll(mutant) - mean_ll(wt)) (summed log-likelihood difference, as esm-if1_window).
+- **`pottsmpnn_window`:** one structure -> zoo unchanged. Fragments: the zoo's Potts energy table per fragment
+  (same `get_etab` call), mutant scored as E(wt) - E(mutant) with the table of its most-central fragment
+  (energies are additive, no rescaling). Reference sequence = entity wild type over the fragment (APOB's AFDB
+  fragment carries C at 1422, wild type Y).
+- Mutants not covered by any fragment: NaN (none in Genebass).
+- **Length:** both are kNN graphs (48 neighbours): memory and time linear in L; PottsMPNN measured elsewhere up to
+  ~21k aa on 24 GB. Both run on CPU.
+- Other inverse-folding / structure models: ESM-IF1 (`esm-if1_window`, §3.2) and SaProt (`saprot_window`) done.
+  ProteinGym's other structure-based baselines (MIF-ST, ProSST, ...) have no zoo folder or evedesign wrapper; not
+  added (would be new zoo models, not long-protein handling).
+
+**Tests and Genebass runs (2026-11-19).** Images `proteinmpnn.sif`, `pottsmpnn.sif` (`build_images.sbatch`, job
+32024839, 6 min each); window packages mounted in the zoo images (`validate_msa_filter.sbatch`, `run_genebass.sbatch`,
+CPU, genoa64). Outputs `$WORK/models/mpnn/{val,genebass}/`.
+- T1 (APOA1, 328 variants, two separate processes): window class == zoo class, max |diff| 0 for both models (also
+  shows the seeded ProteinMPNN order is reproducible). Jobs 32025090/91, 32025227/28.
+- Genebass, all 66 proteins / 5,840 unique mutants, 0 unscored (APOB, LRP2, PKD1 through fragments). Jobs
+  32025130–32 (proteinmpnn_window, 142 CPU-min in total), 32025254 (pottsmpnn_window, 29 min). Predictions
+  `proteingym_clinical/genebass/predictions/v2__{proteinmpnn,pottsmpnn}_window/` (+ `status.tsv`).
+
+| Protein (L) | ProteinMPNN score time / peak RSS | PottsMPNN build+score / peak RSS |
+|---|---|---|
+| ABCA1 (2,261), 279 mutants | 12 min / 10.1 GB | 9 s / 9.3 GB |
+| STAB1 (2,570), 199 mutants, one structure | 11 min / 8.8 GB | 8 s / 8.4 GB |
+| PKD1 (4,303), fragments | 12 min / 13.3 GB | 24 s / 16.3 GB |
+| APOB (4,563), fragments, 507 mutants | 15 min / 2.3 GB | 31 s / 6.0 GB |
+
+Peak RSS includes the archive's MSA, which the runner loads although these models do not use it. ProteinMPNN cost
+is one forward pass per mutant on CPU: ~1.7 s at 1,400 residues (APOB fragments), 2.5–3.3 s at 2,261–2,570.
+- PottsMPNN vs the prototype `pottsmpnn_clinical` (zoo image, fragments most-central): Pearson 1.0, max |diff| 1e-4,
+  63 proteins in common (the prototype missed CST3, GPLD1, UGT1A5).
+- ProteinMPNN vs PottsMPNN per protein: Spearman median 0.85 (0.71–0.96), on APOB/LRP2/PKD1 (fragments) 0.87–0.88,
+  STAB1 0.90. ProteinMPNN vs ESM-IF1 median 0.71.
+- Conclusion: both models are fine at any length in this set: full length up to 2,700 aa (zoo unchanged), AFDB
+  fragments above.
+
 ## 4. Validation protocol
 
 Every change is validated before any benchmark run:
@@ -360,6 +414,9 @@ Planned folders (copies of the zoo folder, same Dockerfile/Singularity.def/lockf
 | `models/eve_filtered` | `EVEFiltered` | `evedesign.models.eve:EVE` (evedesign 0.0.6) |
 | `models/evmutation2_filtered` | `EVmutation2Filtered` | `evedesign.models.evmutation2:EVmutation2` (not tested: ~1,000 aa GPU limit) |
 | `models/gemme_filtered` | `GEMMEFiltered` | zoo `gemme` (`model.py` copied verbatim; not tested: image does not build) |
+| `models/proteinmpnn` | `ProteinMPNN` (seeds the decoding order) | `evedesign.models.mpnn:LigandMPNN`, weights v_48_020 (new zoo folder, §3.7) |
+| `models/proteinmpnn_window` | `ProteinMPNNWindow` | `models/proteinmpnn` (fragments, §3.7) |
+| `models/pottsmpnn_window` | `PottsMPNNWindow` | zoo `pottsmpnn` (fragments, §3.7) |
 
 Shared logic is duplicated per folder to keep folders self-contained: `window.py` (PLM windows, `esm2_window`,
 `esmc_window`), `fragments.py` (structure placement and most-central assignment, `saprot_window`, `esm-if1_window`),
@@ -424,6 +481,8 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
    the bit scores from the archive's raw a3m (§3.6).
 8. EVE columns: popEVE-like all columns (`threshold_focus_cols_frac_gaps: 1.0`, zoo card) kept; EVE 2021 code
    default 0.3 would leave ~24% of positions unscored (§3.6).
+9. ~~Inverse-folding models beyond ESM-IF1~~ **done 2026-11-19 (user request):** ProteinMPNN (new zoo folder, v_48_020,
+   seeded decoding order) and PottsMPNN, zoo unchanged up to 2,700 aa, most-central AFDB fragment above (§3.7).
 
 ## 9. Experiment log
 
@@ -444,6 +503,7 @@ esmc_window 2.16, SaProt 1.57, PottsMPNN 1.33, ESM-IF1 1.22, BLOSUM62 0.79; refe
 | 2026-11-16 | Alignment-model images (job 31923582, genoa64 CPU, `build_images.sbatch`) | rsalor built (3 min); gemme failed: download server gave an empty reply (`curl: (52)`), retry; others in progress | `/no_backup/diasfrazer/egalpern_pgb_clinical/containers/` |
 | 2026-11-16 | Per-variant comparison with earlier implementations (`scripts/clinical/models/export_scores.py`) | see "T2/T3 results" below | — |
 | 2026-11-17 | `*_filtered` alignment models (EVE-protocol MSA filter, §3.6) + validation (rsalor, structuredca, evmutation, eve) | T1 PASS on 4 models; filter stats, correlations, time/memory, EVE vs popEVE: "MSA filter results" below; archives carry no bit scores (open decision) | `$WORK/models/msa_filter/val/` |
+| 2026-11-19 | ProteinMPNN (new zoo folder) + `proteinmpnn_window`, `pottsmpnn_window` (§3.7): T1 on APOA1, Genebass 66 proteins | T1 max diff 0 (both); 66/66 proteins, 0 unscored; PottsMPNN = prototype (r 1.0) | `$WORK/models/mpnn/` |
 
 ### T2/T3 results (2026-11-16)
 
@@ -658,6 +718,10 @@ seeds 0–4 (`EVE_ensemble`), the zoo runs one seed. Jobs 31967282–85, 3197487
   averaged 5 seeds (seeds 0-4); doing so too would cost 5x the GPU time.
 
 ## 10. Picking this up
+
+**Progress note (inverse-folding models, 2026-11-19):** ProteinMPNN and PottsMPNN done for every Genebass protein
+(§3.7): images built, T1 passed, predictions in `predictions/v2__{proteinmpnn,pottsmpnn}_window/`. Next: add them to
+`17_eval_common_variants.py` (they score every variant, so they do not shrink the common set).
 
 **Progress note (MSA filter, 2026-11-17):** `*_filtered` folders built and validated on a few proteins (§3.6, §9
 "MSA filter results"). **Next:**
