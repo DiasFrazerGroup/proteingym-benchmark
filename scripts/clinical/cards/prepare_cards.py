@@ -8,11 +8,14 @@ Cards (one archive set each; `complete` = scored by all six card models, the car
   clinvar_v0                 ClinVar v0 (>=2 stars, germline, P/LP vs B/LB, genes >=10 of each)   target label
   dnm_aptest_ge1             popEVE ST5 ap_test_set DNMs, genes >=1 case & >=1 control             target dnm_case
   dnm_aptest_ge2             same, >=2 & >=2 (= DNM v1)                                           target dnm_case
-  dnm_aptest_random300       same, 300 random ap_test_set genes (seed 0; NEW, no card yet)         target dnm_case
+  dnm_aptest_random300       same, 300 random ap_test_set genes (seed 0; NEW, no card yet)*        target dnm_case
   gnomad_af_clinvar_dnm_ge1  gnomAD v4.1 rare missense (non-UKB AF < 0.1%, AN >= 50% of max),
                              genes of clinvar_v0 U dnm_aptest_ge1                                  target log10_af
   gnomad_af_clinvar_dnm_ge2  same, genes of clinvar_v0 U dnm_aptest_ge2                            target log10_af
-  gnomad_af_random300        same, benchmark_cards/gnomad_af_random300_genes.tsv                   target log10_af
+  gnomad_af_random300        same, benchmark_cards/gnomad_af_random300_genes.tsv*                  target log10_af
+  * Exactly 300 genes, each with a protein <= 2,700 aa and mapped rows (gnomAD: >= 20, the card's per-gene
+    minimum): the original draw's usable genes, topped up with replacements drawn from the same pool (seed 1, in
+    order). Gene lists with origin: <genes-out>/<card>_genes.tsv.
 The reference cards dnm_aptest_full and gnomad_af_full are not archived.
 
 Protein per gene: the Swiss-Prot accession that most of the gene's SNVs map to in the AlphaMissense hg38 SNV index
@@ -55,6 +58,8 @@ MODELS = ["am", "popeve", "cadd", "esm1b", "vesm", "gpn_msa"]
 SCORE_COL = {"am": "score_alphamissense", "popeve": "score_popeve", "cadd": "score_cadd_phred",
              "esm1b": "score_esm1b", "vesm": "score_vesm3b", "gpn_msa": "score_gpn_msa"}
 MIN_N, RARE, OFFSET_MIN, OFFSET_FRAC = 20, 1e-3, 10, 0.9
+BASE_MODELS = ["am", "popeve", "cadd"]          # the gnomAD random-300 eligibility models (scripts/16)
+MAX_LEN, REPLACE_BUFFER = 2700, 100             # random300 sets: protein length cap; replacement candidates mapped
 MUT = re.compile(r"^([A-Z])(\d+)([A-Z])$")
 
 CARDS = {  # name: (source, target)
@@ -118,21 +123,58 @@ def load_sources(cur):
     return cv, dn, g
 
 
-def select(cur, cv, dn, g, genes_out):
-    """Card name -> rows (before mapping), as scripts/16_benchmark_cards.py."""
+def select(cur, cv, dn, g):
+    """Card name -> rows (before mapping), as scripts/16_benchmark_cards.py; and for the two random300 sets,
+    (original draw, replacement candidates in random order). Their rows cover both; finalise_random() picks 300."""
     c = {"clinvar_v0": cv.copy(),
          "dnm_aptest_ge1": gene_filter(dn, "dnm_case", 1),
          "dnm_aptest_ge2": gene_filter(dn, "dnm_case", 2)}
-    rnd = np.random.default_rng(0).choice(np.array(sorted(dn.gene.unique())), 300, replace=False)
-    pd.Series(sorted(rnd), name="gene").to_csv(genes_out / "dnm_aptest_random300_genes.tsv", sep="\t", index=False)
-    c["dnm_aptest_random300"] = dn[dn.gene.isin(rnd)].copy()
+    pool = np.array(sorted(dn.gene.unique()))
+    orig = sorted(np.random.default_rng(0).choice(pool, 300, replace=False))
+    rand = {"dnm_aptest_random300": (orig, replacement_order(pool, orig))}
     cvg = set(cv.gene)
-    r300 = set(pd.read_csv(cur / "benchmark_cards/gnomad_af_random300_genes.tsv", sep="\t").gene)
+    orig = sorted(pd.read_csv(cur / "benchmark_cards/gnomad_af_random300_genes.tsv", sep="\t").gene)
+    nper = g.dropna(subset=BASE_MODELS).groupby("gene").size()       # the card's eligible pool (scripts/16)
+    rand["gnomad_af_random300"] = (orig, replacement_order(np.array(sorted(nper[nper >= MIN_N].index)), orig))
+    c["dnm_aptest_random300"] = dn[dn.gene.isin(set().union(*rand["dnm_aptest_random300"]))].copy()
     for name, genes in [("gnomad_af_clinvar_dnm_ge1", cvg | set(c["dnm_aptest_ge1"].gene)),
                         ("gnomad_af_clinvar_dnm_ge2", cvg | set(c["dnm_aptest_ge2"].gene)),
-                        ("gnomad_af_random300", r300)]:
+                        ("gnomad_af_random300", set().union(*rand["gnomad_af_random300"]))]:
         c[name] = g[g.gene.isin(genes)].copy()
-    return c
+    return c, rand
+
+
+def replacement_order(pool, orig, n=REPLACE_BUFFER):
+    """Replacement candidates: the pool minus the original draw, in a fixed random order (seed 1)."""
+    rest = np.array(sorted(set(pool) - set(orig)))
+    return list(np.random.default_rng(1).permutation(rest)[:n])
+
+
+def finalise_random(cards, rand, keys, mp, prots, genes_out):
+    """random300 sets: keep the original draw's genes that are usable, top up to 300 with replacement candidates in
+    order. Usable = protein <= MAX_LEN aa and enough mapped rows (gnomAD: >= MIN_N, the card's per-gene minimum;
+    DNM: >= 1). Writes <genes_out>/<card>_genes.tsv (gene, origin, protein length, mapped rows)."""
+    length = prots.set_index("gene").length
+    for n, (orig, repl) in rand.items():
+        s, _ = CARDS[n]
+        d = cards[n]
+        k = s + ":" + d[keys[s]].astype(str).agg("|".join, axis=1)
+        nmap = d[k.isin(mp.index)].groupby("gene").size()
+        need = MIN_N if s == "gnomad" else 1
+
+        def usable(gn):
+            return gn in length.index and length[gn] <= MAX_LEN and nmap.get(gn, 0) >= need
+        keep = [x for x in orig if usable(x)]
+        add = [x for x in repl if usable(x)][: 300 - len(keep)]
+        assert len(keep) + len(add) == 300, (n, len(keep), len(add))
+        why = {x: ("protein > %d aa" % MAX_LEN if x in length.index and length[x] > MAX_LEN else
+                   f"< {need} mapped rows") for x in orig if x not in keep}
+        print(f"{n}: kept {len(keep)} of the original 300, replaced {len(why)} ({why}) by {add}", flush=True)
+        cards[n] = d[d.gene.isin(set(keep) | set(add))].copy()
+        pd.DataFrame({"gene": keep + add, "origin": ["original_draw"] * len(keep) + ["replacement"] * len(add),
+                      "protein_length": [int(length[x]) for x in keep + add],
+                      "n_mapped_rows": [int(nmap[x]) for x in keep + add]}).sort_values("gene").to_csv(
+            genes_out / f"{n}_genes.tsv", sep="\t", index=False)
 
 
 def counts(name, d):
@@ -315,10 +357,7 @@ def main():
     a.genes_out.mkdir(parents=True, exist_ok=True)
 
     cv, dn, g = load_sources(a.curation)
-    cards = select(a.curation, cv, dn, g, a.genes_out)
-    sel = pd.DataFrame([counts(n, d) for n, d in cards.items()])
-    sel.to_csv(a.out / "selection_counts.tsv", sep="\t", index=False)
-    print(sel.to_string(index=False), flush=True)
+    cards, rand = select(a.curation, cv, dn, g)
 
     # map each source once (on the union of the rows its cards use), then subset per card
     sp, gene2acc = read_sprot(a.sprot)
@@ -346,6 +385,11 @@ def main():
     mp = mapped.set_index("key")[["uniprot_id", "mutant", "mapping"]]
     print(f"mapped {len(mapped):,} of {len(pooled):,} source rows; {len(um):,} unmapped; "
           f"{mapped.mapping.value_counts().to_dict()}", flush=True)
+
+    finalise_random(cards, rand, keys, mp, prots, a.genes_out)
+    sel = pd.DataFrame([counts(n, d) for n, d in cards.items()])
+    sel.to_csv(a.out / "selection_counts.tsv", sep="\t", index=False)
+    print(sel.to_string(index=False), flush=True)
 
     for n, d in cards.items():
         s, y = CARDS[n]

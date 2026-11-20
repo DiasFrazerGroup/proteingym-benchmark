@@ -13,10 +13,18 @@ indexes. The archives themselves are generated (not committed) under
 | `clinvar_v0` | ClinVar germline missense, ≥2 stars, P/LP vs B/LB, genes with ≥10 of each | `label` (1 = P/LP) | pooled AUROC; per-gene mean AUROC over genes with both classes |
 | `dnm_aptest_ge1` | popEVE ST5 `ap_test_set` de novo missense, genes with ≥1 case and ≥1 control | `dnm_case` (1 = SDD case) | as ClinVar |
 | `dnm_aptest_ge2` | same, ≥2 and ≥2 (= DNM v1) | `dnm_case` | as ClinVar |
-| `dnm_aptest_random300` | same, 300 random `ap_test_set` genes (seed 0; `dnm_aptest_random300_genes.tsv`). New: no card in clinical-curation yet | `dnm_case` | as ClinVar (most genes have one class: pooled AUROC is the usable metric) |
+| `dnm_aptest_random300` | same, 300 random `ap_test_set` genes (seed 0)*. New: no card in clinical-curation yet | `dnm_case` | as ClinVar (most genes have one class: pooled AUROC is the usable metric) |
 | `gnomad_af_clinvar_dnm_ge1` | gnomAD v4.1 exome PASS MANE-Select missense SNVs, non-UKB AF < 0.1%, AN ≥ 50% of max; genes of `clinvar_v0` ∪ `dnm_aptest_ge1` | `log10_af` (non-UKB) | Spearman ρ(score, log10 AF), pooled and per-gene mean over genes with ≥20 variants (lower = better) |
 | `gnomad_af_clinvar_dnm_ge2` | same, genes of `clinvar_v0` ∪ `dnm_aptest_ge2` | `log10_af` | as above |
-| `gnomad_af_random300` | same, the card's 300 random genes | `log10_af` | as above |
+| `gnomad_af_random300` | same, the card's 300 random genes* | `log10_af` | as above |
+
+\* **Random sets, exactly 300 genes, all proteins ≤ 2,700 aa** (no AFDB fragments needed):
+- **Kept:** the original draw's genes whose protein is ≤ 2,700 aa and that have mapped variants (gnomAD: ≥ 20, the
+  card's per-gene minimum).
+- **Topped up** with replacements drawn from the same pool in a fixed random order (seed 1).
+- `dnm_aptest_random300`: 9 replaced (8 with no mappable variant, TACC2 > 2,700 aa).
+- `gnomad_af_random300`: 2 replaced (MEF2A, RERGL). It is therefore not exactly the clinical-curation card.
+- Gene lists with each gene's origin are in `<card>_genes.tsv`.
 
 The reference cards `dnm_aptest_full` and `gnomad_af_full` (proteome scale) are not archived.
 

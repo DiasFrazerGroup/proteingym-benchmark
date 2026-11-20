@@ -6,8 +6,10 @@ ACY1_HUMAN_DNM_APTEST,dnm_aptest_random300,ACY1,Q03154,ACY1_HUMAN,408,1,1,1,0,am
 ADA10_HUMAN_DNM_APTEST,dnm_aptest_random300,ADAM10,O14672,ADA10_HUMAN,748,1,1,0,1,am_snv_index:1,1,80.05,125074,,dnm_aptest_random300/splits/ADA10_HUMAN_DNM_APTEST.splits.pgdata
 ADA19_HUMAN_DNM_APTEST,dnm_aptest_random300,ADAM19,Q9H013,ADA19_HUMAN,955,1,1,0,1,am_snv_index:1,1,69.94,287105,,dnm_aptest_random300/splits/ADA19_HUMAN_DNM_APTEST.splits.pgdata
 ADCY2_HUMAN_DNM_APTEST,dnm_aptest_random300,ADCY2,Q08462,ADCY2_HUMAN,1091,2,2,0,2,am_snv_index:2,1,79.0,268499,,dnm_aptest_random300/splits/ADCY2_HUMAN_DNM_APTEST.splits.pgdata
+AGRB1_HUMAN_DNM_APTEST,dnm_aptest_random300,ADGRB1,O14514,AGRB1_HUMAN,1584,3,3,0,3,am_snv_index:3,1,62.24,426623,,dnm_aptest_random300/splits/AGRB1_HUMAN_DNM_APTEST.splits.pgdata
 PUR8_HUMAN_DNM_APTEST,dnm_aptest_random300,ADSL,P30566,PUR8_HUMAN,484,1,1,0,1,am_snv_index:1,1,96.55,347017,,dnm_aptest_random300/splits/PUR8_HUMAN_DNM_APTEST.splits.pgdata
 AFG1L_HUMAN_DNM_APTEST,dnm_aptest_random300,AFG1L,Q8WV93,AFG1L_HUMAN,481,1,1,0,1,am_snv_index:1,1,78.14,65583,,dnm_aptest_random300/splits/AFG1L_HUMAN_DNM_APTEST.splits.pgdata
+GDE_HUMAN_DNM_APTEST,dnm_aptest_random300,AGL,P35573,GDE_HUMAN,1532,3,3,3,0,am_snv_index:3,1,92.75,431980,,dnm_aptest_random300/splits/GDE_HUMAN_DNM_APTEST.splits.pgdata
 ALG13_HUMAN_DNM_APTEST,dnm_aptest_random300,ALG13,Q9NP73,ALG13_HUMAN,1137,2,2,2,0,am_snv_index:2,1,53.81,147547,,dnm_aptest_random300/splits/ALG13_HUMAN_DNM_APTEST.splits.pgdata
 ALKB3_HUMAN_DNM_APTEST,dnm_aptest_random300,ALKBH3,Q96Q83,ALKB3_HUMAN,286,1,1,0,1,am_snv_index:1,1,82.03,93252,,dnm_aptest_random300/splits/ALKB3_HUMAN_DNM_APTEST.splits.pgdata
 THOC4_HUMAN_DNM_APTEST,dnm_aptest_random300,ALYREF,Q86V81,THOC4_HUMAN,257,1,1,0,1,am_snv_index:1,1,64.1,1179816,,dnm_aptest_random300/splits/THOC4_HUMAN_DNM_APTEST.splits.pgdata
@@ -62,7 +64,9 @@ PRP16_HUMAN_DNM_APTEST,dnm_aptest_random300,DHX38,Q92620,PRP16_HUMAN,1227,1,1,0,
 DIAP1_HUMAN_DNM_APTEST,dnm_aptest_random300,DIAPH1,O60610,DIAP1_HUMAN,1272,6,6,4,2,am_snv_index:6,1,72.74,90638,,dnm_aptest_random300/splits/DIAP1_HUMAN_DNM_APTEST.splits.pgdata
 DLG5_HUMAN_DNM_APTEST,dnm_aptest_random300,DLG5,Q8TDM6,DLG5_HUMAN,1919,6,6,4,2,am_snv_index:6,1,62.44,853868,,dnm_aptest_random300/splits/DLG5_HUMAN_DNM_APTEST.splits.pgdata
 DLGP4_HUMAN_DNM_APTEST,dnm_aptest_random300,DLGAP4,Q9Y2H0,DLGP4_HUMAN,992,1,1,0,1,am_snv_index:1,1,49.45,19900,,dnm_aptest_random300/splits/DLGP4_HUMAN_DNM_APTEST.splits.pgdata
+DMRT3_HUMAN_DNM_APTEST,dnm_aptest_random300,DMRT3,Q9NQL9,DMRT3_HUMAN,472,1,1,0,1,am_snv_index:1,1,57.26,14764,,dnm_aptest_random300/splits/DMRT3_HUMAN_DNM_APTEST.splits.pgdata
 DNA2_HUMAN_DNM_APTEST,dnm_aptest_random300,DNA2,P51530,DNA2_HUMAN,1060,3,3,3,0,am_snv_index:3,1,87.8,358013,,dnm_aptest_random300/splits/DNA2_HUMAN_DNM_APTEST.splits.pgdata
+DOC10_HUMAN_DNM_APTEST,dnm_aptest_random300,DOCK10,Q96BY6,DOC10_HUMAN,2186,1,1,0,1,am_snv_index:1,1,75.53,302703,,dnm_aptest_random300/splits/DOC10_HUMAN_DNM_APTEST.splits.pgdata
 DRD3_HUMAN_DNM_APTEST,dnm_aptest_random300,DRD3,P35462,DRD3_HUMAN,400,1,1,0,1,am_snv_index:1,1,75.38,1001369,,dnm_aptest_random300/splits/DRD3_HUMAN_DNM_APTEST.splits.pgdata
 DUS7_HUMAN_DNM_APTEST,dnm_aptest_random300,DUSP7,Q16829,DUS7_HUMAN,419,1,1,0,1,am_snv_index:1,1,74.03,159039,,dnm_aptest_random300/splits/DUS7_HUMAN_DNM_APTEST.splits.pgdata
 DVL1_HUMAN_DNM_APTEST,dnm_aptest_random300,DVL1,O14640,DVL1_HUMAN,695,2,2,2,0,am_snv_index:2,1,59.85,1068177,,dnm_aptest_random300/splits/DVL1_HUMAN_DNM_APTEST.splits.pgdata
@@ -110,6 +114,7 @@ INT9_HUMAN_DNM_APTEST,dnm_aptest_random300,INTS9,Q9NV88,INT9_HUMAN,658,1,1,0,1,a
 IPO8_HUMAN_DNM_APTEST,dnm_aptest_random300,IPO8,O15397,IPO8_HUMAN,1037,3,3,3,0,am_snv_index:3,1,87.41,53948,,dnm_aptest_random300/splits/IPO8_HUMAN_DNM_APTEST.splits.pgdata
 IRX2_HUMAN_DNM_APTEST,dnm_aptest_random300,IRX2,Q9BZI1,IRX2_HUMAN,471,1,1,0,1,am_snv_index:1,1,54.27,83071,,dnm_aptest_random300/splits/IRX2_HUMAN_DNM_APTEST.splits.pgdata
 IRX5_HUMAN_DNM_APTEST,dnm_aptest_random300,IRX5,P78411,IRX5_HUMAN,483,1,1,1,0,am_snv_index:1,1,54.31,75831,,dnm_aptest_random300/splits/IRX5_HUMAN_DNM_APTEST.splits.pgdata
+IP3KB_HUMAN_DNM_APTEST,dnm_aptest_random300,ITPKB,P27987,IP3KB_HUMAN,946,1,1,0,1,am_snv_index:1,1,55.26,27471,,dnm_aptest_random300/splits/IP3KB_HUMAN_DNM_APTEST.splits.pgdata
 JCAD_HUMAN_DNM_APTEST,dnm_aptest_random300,JCAD,Q9P266,JCAD_HUMAN,1359,1,1,0,1,am_snv_index:1,1,42.85,2534,,dnm_aptest_random300/splits/JCAD_HUMAN_DNM_APTEST.splits.pgdata
 KAL1L_HUMAN_DNM_APTEST,dnm_aptest_random300,KANSL1L,A0AUZ9,KAL1L_HUMAN,987,1,1,0,1,am_snv_index:1,1,50.09,7882,,dnm_aptest_random300/splits/KAL1L_HUMAN_DNM_APTEST.splits.pgdata
 KCNK4_HUMAN_DNM_APTEST,dnm_aptest_random300,KCNK4,Q9NYG8,KCNK4_HUMAN,393,6,6,5,1,am_snv_index:6,1,78.7,123815,,dnm_aptest_random300/splits/KCNK4_HUMAN_DNM_APTEST.splits.pgdata
@@ -134,6 +139,7 @@ MBOA7_HUMAN_DNM_APTEST,dnm_aptest_random300,MBOAT7,Q96N66,MBOA7_HUMAN,472,4,4,4,
 MDC1_HUMAN_DNM_APTEST,dnm_aptest_random300,MDC1,Q14676,MDC1_HUMAN,2089,1,1,0,1,am_snv_index:1,1,40.24,276561,,dnm_aptest_random300/splits/MDC1_HUMAN_DNM_APTEST.splits.pgdata
 MGDP1_HUMAN_DNM_APTEST,dnm_aptest_random300,MDP1,Q86V88,MGDP1_HUMAN,176,1,1,0,1,am_snv_index:1,1,93.63,185440,,dnm_aptest_random300/splits/MGDP1_HUMAN_DNM_APTEST.splits.pgdata
 MED24_HUMAN_DNM_APTEST,dnm_aptest_random300,MED24,O75448,MED24_HUMAN,989,2,2,0,2,am_snv_index:2,1,84.14,3850,,dnm_aptest_random300/splits/MED24_HUMAN_DNM_APTEST.splits.pgdata
+MEP1A_HUMAN_DNM_APTEST,dnm_aptest_random300,MEP1A,Q16819,MEP1A_HUMAN,746,1,1,0,1,am_snv_index:1,1,84.55,229765,,dnm_aptest_random300/splits/MEP1A_HUMAN_DNM_APTEST.splits.pgdata
 MIER2_HUMAN_DNM_APTEST,dnm_aptest_random300,MIER2,Q8N344,MIER2_HUMAN,545,1,1,0,1,am_snv_index:1,1,57.15,82200,,dnm_aptest_random300/splits/MIER2_HUMAN_DNM_APTEST.splits.pgdata
 MKKS_HUMAN_DNM_APTEST,dnm_aptest_random300,MKKS,Q9NPJ1,MKKS_HUMAN,570,1,1,0,1,am_snv_index:1,1,88.96,165534,,dnm_aptest_random300/splits/MKKS_HUMAN_DNM_APTEST.splits.pgdata
 MKS1_HUMAN_DNM_APTEST,dnm_aptest_random300,MKS1,Q9NXB0,MKS1_HUMAN,559,2,2,2,0,am_snv_index:2,1,73.58,8869,,dnm_aptest_random300/splits/MKS1_HUMAN_DNM_APTEST.splits.pgdata
@@ -166,6 +172,7 @@ PBIP1_HUMAN_DNM_APTEST,dnm_aptest_random300,PBXIP1,Q96AQ6,PBIP1_HUMAN,731,1,1,0,
 PED1A_HUMAN_DNM_APTEST,dnm_aptest_random300,PCED1A,Q9H1Q7,PED1A_HUMAN,454,1,1,0,1,am_snv_index:1,1,70.32,3200,,dnm_aptest_random300/splits/PED1A_HUMAN_DNM_APTEST.splits.pgdata
 PCX3_HUMAN_DNM_APTEST,dnm_aptest_random300,PCNX3,Q9H6A9,PCX3_HUMAN,2034,1,1,0,1,am_snv_index:1,1,59.93,14132,,dnm_aptest_random300/splits/PCX3_HUMAN_DNM_APTEST.splits.pgdata
 PCYOX_HUMAN_DNM_APTEST,dnm_aptest_random300,PCYOX1,Q9UHG3,PCYOX_HUMAN,505,1,1,0,1,am_snv_index:1,1,91.3,242526,,dnm_aptest_random300/splits/PCYOX_HUMAN_DNM_APTEST.splits.pgdata
+PDE4D_HUMAN_DNM_APTEST,dnm_aptest_random300,PDE4D,Q08499,PDE4D_HUMAN,809,9,9,9,0,am_snv_index:9,1,67.44,95499,,dnm_aptest_random300/splits/PDE4D_HUMAN_DNM_APTEST.splits.pgdata
 PDIA3_HUMAN_DNM_APTEST,dnm_aptest_random300,PDIA3,P30101,PDIA3_HUMAN,505,1,1,0,1,am_snv_index:1,1,91.34,371641,,dnm_aptest_random300/splits/PDIA3_HUMAN_DNM_APTEST.splits.pgdata
 PEX13_HUMAN_DNM_APTEST,dnm_aptest_random300,PEX13,Q92968,PEX13_HUMAN,403,2,2,2,0,am_snv_index:2,1,64.94,586299,,dnm_aptest_random300/splits/PEX13_HUMAN_DNM_APTEST.splits.pgdata
 PEX6_HUMAN_DNM_APTEST,dnm_aptest_random300,PEX6,Q13608,PEX6_HUMAN,980,2,2,0,2,am_snv_index:2,1,69.29,943642,,dnm_aptest_random300/splits/PEX6_HUMAN_DNM_APTEST.splits.pgdata
@@ -194,6 +201,7 @@ RAD50_HUMAN_DNM_APTEST,dnm_aptest_random300,RAD50,Q92878,RAD50_HUMAN,1312,7,7,7,
 RGS7_HUMAN_DNM_APTEST,dnm_aptest_random300,RGS7,P49802,RGS7_HUMAN,495,3,3,2,1,am_snv_index:3,1,85.89,125027,,dnm_aptest_random300/splits/RGS7_HUMAN_DNM_APTEST.splits.pgdata
 REBL1_HUMAN_DNM_APTEST,dnm_aptest_random300,RHEBL1,Q8TAI7,REBL1_HUMAN,183,1,1,0,1,am_snv_index:1,1,92.9,729657,,dnm_aptest_random300/splits/REBL1_HUMAN_DNM_APTEST.splits.pgdata
 RIT2_HUMAN_DNM_APTEST,dnm_aptest_random300,RIT2,Q99578,RIT2_HUMAN,217,1,1,0,1,am_snv_index:1,1,87.84,733557,,dnm_aptest_random300/splits/RIT2_HUMAN_DNM_APTEST.splits.pgdata
+RN123_HUMAN_DNM_APTEST,dnm_aptest_random300,RNF123,Q5XPI4,RN123_HUMAN,1314,1,1,0,1,am_snv_index:1,1,81.15,115193,,dnm_aptest_random300/splits/RN123_HUMAN_DNM_APTEST.splits.pgdata
 RN141_HUMAN_DNM_APTEST,dnm_aptest_random300,RNF141,Q8WVD5,RN141_HUMAN,230,1,1,0,1,am_snv_index:1,1,83.42,405902,,dnm_aptest_random300/splits/RN141_HUMAN_DNM_APTEST.splits.pgdata
 ROBO1_HUMAN_DNM_APTEST,dnm_aptest_random300,ROBO1,Q9Y6N7,ROBO1_HUMAN,1651,1,1,0,1,am_snv_index:1,1,60.0,1703931,,dnm_aptest_random300/splits/ROBO1_HUMAN_DNM_APTEST.splits.pgdata
 ROBO3_HUMAN_DNM_APTEST,dnm_aptest_random300,ROBO3,Q96MS0,ROBO3_HUMAN,1386,5,5,3,2,am_snv_index:5,1,63.68,1719561,,dnm_aptest_random300/splits/ROBO3_HUMAN_DNM_APTEST.splits.pgdata
@@ -237,10 +245,10 @@ STEA3_HUMAN_DNM_APTEST,dnm_aptest_random300,STEAP3,Q658P3,STEA3_HUMAN,488,1,1,0,
 STX3_HUMAN_DNM_APTEST,dnm_aptest_random300,STX3,Q13277,STX3_HUMAN,289,1,1,0,1,am_snv_index:1,1,83.3,53069,,dnm_aptest_random300/splits/STX3_HUMAN_DNM_APTEST.splits.pgdata
 SYC2L_HUMAN_DNM_APTEST,dnm_aptest_random300,SYCP2L,Q5T4T6,SYC2L_HUMAN,812,1,1,0,1,am_snv_index:1,1,65.87,6226,,dnm_aptest_random300/splits/SYC2L_HUMAN_DNM_APTEST.splits.pgdata
 SYN1_HUMAN_DNM_APTEST,dnm_aptest_random300,SYN1,P17600,SYN1_HUMAN,705,1,1,1,0,am_snv_index:1,1,68.07,156077,,dnm_aptest_random300/splits/SYN1_HUMAN_DNM_APTEST.splits.pgdata
-TACC2_HUMAN_DNM_APTEST,dnm_aptest_random300,TACC2,O95359,TACC2_HUMAN,2948,1,1,0,1,am_snv_index:1,9,40.89,18284,,dnm_aptest_random300/splits/TACC2_HUMAN_DNM_APTEST.splits.pgdata
 TADA3_HUMAN_DNM_APTEST,dnm_aptest_random300,TADA3,O75528,TADA3_HUMAN,432,1,1,0,1,am_snv_index:1,1,75.45,3991,,dnm_aptest_random300/splits/TADA3_HUMAN_DNM_APTEST.splits.pgdata
 TAOK1_HUMAN_DNM_APTEST,dnm_aptest_random300,TAOK1,Q7L7X3,TAOK1_HUMAN,1001,9,9,9,0,am_snv_index:9,1,76.18,1032211,,dnm_aptest_random300/splits/TAOK1_HUMAN_DNM_APTEST.splits.pgdata
 T2R60_HUMAN_DNM_APTEST,dnm_aptest_random300,TAS2R60,P59551,T2R60_HUMAN,318,1,1,0,1,am_snv_index:1,1,77.87,23924,,dnm_aptest_random300/splits/T2R60_HUMAN_DNM_APTEST.splits.pgdata
+ATTY_HUMAN_DNM_APTEST,dnm_aptest_random300,TAT,P17735,ATTY_HUMAN,454,2,2,1,1,am_snv_index:2,1,91.74,1000431,,dnm_aptest_random300/splits/ATTY_HUMAN_DNM_APTEST.splits.pgdata
 TBC24_HUMAN_DNM_APTEST,dnm_aptest_random300,TBC1D24,Q9ULP9,TBC24_HUMAN,559,1,1,1,0,am_snv_index:1,1,84.12,201883,,dnm_aptest_random300/splits/TBC24_HUMAN_DNM_APTEST.splits.pgdata
 TBX19_HUMAN_DNM_APTEST,dnm_aptest_random300,TBX19,O60806,TBX19_HUMAN,448,1,1,0,1,am_snv_index:1,1,62.74,42113,,dnm_aptest_random300/splits/TBX19_HUMAN_DNM_APTEST.splits.pgdata
 TBX20_HUMAN_DNM_APTEST,dnm_aptest_random300,TBX20,Q9UMR3,TBX20_HUMAN,447,1,1,1,0,am_snv_index:1,1,66.55,42299,,dnm_aptest_random300/splits/TBX20_HUMAN_DNM_APTEST.splits.pgdata

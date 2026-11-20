@@ -12,7 +12,8 @@ Per card:
                  small difference is expected and is printed instead.
   4. archives    a sample loads with proteingym-base (Subsets.from_path); every row's sequence is the wild type
                  with exactly the `mutant` substitution
-dnm_aptest_random300 has no card: its metrics are printed only.
+The random300 sets (dnm_aptest_random300: no card; gnomad_af_random300: topped up with replacement genes) are not
+compared with a card: their counts and metrics are printed only.
 Run: python scripts/clinical/cards/check_cards.py --prepared $WORK/cards --curation <clinical-curation>
 """
 import argparse
@@ -72,7 +73,8 @@ def main():
     for card, s in SOURCE.items():
         print(f"\n=== {card}")
         y, gnomad = TARGET[s], s == "gnomad"
-        cs = summ[summ.card == card]
+        # random300 sets are topped up to 300 usable genes (<= 2,700 aa), so they are not the card's exact set
+        cs = summ[(summ.card == card) & ~card.endswith("random300")]
         # 1. selection
         if len(cs):
             r0 = cs.iloc[0]

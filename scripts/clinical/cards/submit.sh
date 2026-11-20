@@ -10,8 +10,9 @@ source scripts/clinical/cards/env.sh
 mkdir -p "$WORK/logs" "$WORK/msas" "$WORK/queries"
 common=(--partition=genoa64 --export=ALL --chdir="$(pwd)")
 S=scripts/clinical/cards
-CARDS=(clinvar_v0 dnm_aptest_ge1 dnm_aptest_ge2 dnm_aptest_random300 gnomad_af_clinvar_dnm_ge1
-       gnomad_af_clinvar_dnm_ge2 gnomad_af_random300)
+# ONLY_CARDS="a b" restricts the build to those cards (the check always covers every card)
+CARDS=(${ONLY_CARDS:-clinvar_v0 dnm_aptest_ge1 dnm_aptest_ge2 dnm_aptest_random300 gnomad_af_clinvar_dnm_ge1
+       gnomad_af_clinvar_dnm_ge2 gnomad_af_random300})
 
 submit_build() {  # $1 = dependency spec (may be empty); rest = build_cards.py args
   local dep=$1; shift
