@@ -34,7 +34,7 @@ else:
     from proteingym.models.esm_if1_window.model import ESMIF1 as Zoo
 hp = dict(ModelCard.from_path(a.card).hyper_parameters)
 hp["device"] = "cuda"
-zoo_hp = {k: v for k, v in hp.items() if k not in ("window", "special_tokens", "batch_size")}
+zoo_hp = {k: v for k, v in hp.items() if k not in ("window", "special_tokens", "batch_size", "context")}
 if a.which == "saprot" and "batch_size" in hp:
     zoo_hp["batch_size"] = hp["batch_size"]
 
@@ -65,7 +65,7 @@ for f in files:
         asg = m.structure_assignment
         msg += f" | {len(set(asg))} structures used, uncovered {sum(x is None for x in asg)}"
     print(msg, flush=True)
-    if first and ns == 1 and L <= 1022 and len(t1) < 3:
+    if first and ns == 1 and L <= hp.get("window", 1022) and len(t1) < 3:
         sub_inst = inst[:40]
         z = Zoo(**zoo_hp).build(system)
         zs = np.array([x.score for x in z.score(sub_inst)])

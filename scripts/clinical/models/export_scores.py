@@ -14,7 +14,7 @@ idx = pd.read_csv(W / "genebass_api/build/genebass_fig6b.csv")
 entry2u = dict(zip(idx.entry_name, idx.uniprot_id))
 
 runs = {"plm_windows/esm2": "esm2_window", "plm_windows/esmc": "esmc_window",
-        "struct_windows/saprot": "saprot_window", "struct_windows/esmif1": "esm-if1_window"}
+        "struct_windows/saprot": "saprot_window", "struct_windows/esmif1_de500": "esm-if1_window"}
 REFS = {"esm2_window": ["dark_energy__ESM2_650M_masked", "esm2_window"], "esmc_window": ["esmc_window"],
         "saprot_window": ["saprot_clinical"], "esm-if1_window": ["esm_if1_clinical"]}
 for sub, model in runs.items():

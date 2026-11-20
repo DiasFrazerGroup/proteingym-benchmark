@@ -17,12 +17,15 @@ multi_y: false
 # There is only one officially released ESM-IF1 checkpoint size
 # (esm_if1_gvp4_t16_142M_UR50, 142M params) - no size-family/sweep logic.
 hyper_parameters:
-    # clinical (long proteins): residues per tile (tiles every window/2), structure fragments as separate frames.
-    # 2700 = full length (user decision 2026-11-19): one AFDB structure (<= 2,700 aa) is scored whole, as the zoo
-    # model does; above 2,700 aa each mutant is scored on its whole most-central AFDB fragment (fragments < 2,700 aa)
-    window: 2700
-    # sequences per forward pass
-    batch_size: 16
+    # clinical (long proteins), user decision 2026-11-19: the dark energy method
+    # (dark_energy_mane/scripts/awsem/esm/esm_if_logit_longprot.py), with its context bugs fixed. ESM-IF1 was trained
+    # on chains <= 500 aa (Hsu et al. 2022, appendix A.1), so each mutant is scored in the 500-residue tile where it is
+    # most central (tiles every 250), with the rest of the protein's backbone as extra chains (<= 500 residues each,
+    # ESM multichain layout, only the target tile decoded). L <= 500: identical to the zoo (one tile, no context).
+    window: 500
+    context: true
+    # sequences per forward pass (1 fits an 11 GB GPU at 2,570 aa with context; 4 needs > 11 GB above ~1,300 aa)
+    batch_size: 1
     checkpoint_path: "/opt/program/data/esm_if1_gvp4_t16_142M_UR50.pt"
     # Key into the entity's structures mapping to select a structure, if
     # more than one is present. Leave null (every real ProteinGym2 archive
@@ -33,7 +36,7 @@ hyper_parameters:
 
 # Model Card for esm-if1_window (clinical: long proteins)
 
-Same model as the zoo's `esm-if1`, for proteins of any length: structures (AlphaFold DB fragments) are placed on the wild type by sequence; each mutant is scored in the fragment and the `window`-residue tile where it is most central, as log p(mutant | backbone) - log p(wild type | backbone) summed over the tile. With `window: 2700` no protein is tiled: one full-length structure is scored whole (L times the zoo score minus a per-protein constant) and fragments are scored whole. Tiles of 1,022 changed the scores (median Spearman 0.62 vs full length on 15 proteins of 1,078–2,570 aa) and were dropped. See `docs/clinical/models_long_proteins.md` (section 3.2).
+Same model as the zoo's `esm-if1`, for proteins of any length: structures (AlphaFold DB fragments) are placed on the wild type by sequence; each mutant is scored in the fragment and the `window`-residue tile where it is most central, as log p(mutant | backbone) - log p(wild type | backbone) summed over the tile. With `window: 500, context: true` (the dark energy method, bugs fixed; `docs/clinical/models_long_proteins.md` §3.2) the scored chunk never exceeds ESM-IF1's 500-residue training length and the rest of the protein is visible to the encoder as context chains. Full length (window 2700) and 1,022-residue tiles score positions beyond the training length and were dropped. See `docs/clinical/models_long_proteins.md` (section 3.2).
 
 ---
 

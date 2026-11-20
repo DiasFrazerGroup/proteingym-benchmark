@@ -14,6 +14,17 @@ Here:
 - For one full-length structure and L <= window this is L * (zoo(mut) - zoo(wt)): a fixed linear transform of the
   zoo score within a protein (same ranking, same Pearson/Spearman per protein).
 Residues that differ between a structure and the wild type are allowed (the zoo raises); the wild type is scored.
+
+Context (`context=True`, clinical default with window 500): the dark energy method for long proteins
+(dark_energy_mane/scripts/awsem/esm/esm_if_logit_longprot.py: ESM-IF1 was trained on chains <= 500 aa, so the target
+is a <= 500-residue chunk and the rest of the protein is given as extra chains for structural context, in ESM-IF1's
+multichain layout). As in ESM's own score_sequence_in_complex: target chunk first, the other chains after it with 10
+NaN padding residues in between (multichain_util._concatenate_coords), and only the target chunk is decoded. Fixes
+relative to the dark energy script (docs/clinical/models_long_proteins.md §3.2): context chains are the rest of the
+frame split into <= `window`-residue pieces with no overlap with the target and no skipped residues (the script
+slices contiguous blocks from list indices, repeating target residues and dropping others), all of it is used (the
+script keeps the first 5 chains), only the target is decoded, and there is no log-probability merging (the script
+scales log-probabilities by the overlap weight on first coverage): each mutant is scored in its most central tile.
 """
 # the zoo module first: it patches biotite (filter_backbone) before fair-esm's inverse_folding imports it
 from .model import ESMIF1  # noqa: I001
@@ -24,6 +35,7 @@ import torch
 import torch.nn.functional as F
 import biotite.structure as struc
 import esm.inverse_folding.util as if_util
+from esm.inverse_folding.multichain_util import _concatenate_coords
 from evedesign.model import assign_scores_to_instances
 from evedesign.utils import ensure_sequence
 
@@ -40,6 +52,14 @@ def tiles(start: int, end: int, window: int) -> list[tuple[int, int]]:
     return [(a, a + window) for a in s]
 
 
+def context_pieces(start: int, end: int, a: int, b: int, size: int) -> list[tuple[int, int]]:
+    """[s, e) pieces of <= size residues covering the frame [start, end] (inclusive) minus the tile [a, b)."""
+    out = []
+    for s0, e0 in ((start, a), (b, end + 1)):
+        out.extend((s, min(s + size, e0)) for s in range(s0, e0, size))
+    return out
+
+
 def _chain(structure):
     return list(ensure_sequence(structure))[0]
 
@@ -47,9 +67,9 @@ def _chain(structure):
 class ESMIF1Window(ESMIF1):
     name: str = "ESMIF1Window"
 
-    def __init__(self, window: int = 1022, batch_size: int = 16, **kwargs):
+    def __init__(self, window: int = 1022, batch_size: int = 16, context: bool = False, **kwargs):
         super().__init__(**kwargs)
-        self.window, self.batch_size = int(window), int(batch_size)
+        self.window, self.batch_size, self.context = int(window), int(batch_size), bool(context)
         self._frames = None   # list of (name, start, end, coords (L, 3, 3) indexed by wild-type position)
 
     def build(self, system, data=None, status_callback=None):
@@ -122,7 +142,13 @@ class ESMIF1Window(ESMIF1):
         scores = np.zeros(len(seqs))
         with torch.no_grad():
             for (f, (a, b)), idx in units.items():
-                coords = self._frames[f][3][a:b]
+                full, st, en = self._frames[f][3], self._frames[f][1], self._frames[f][2]
+                coords = full[a:b]
+                if self.context:
+                    chains = {"A": coords}
+                    for j, (s, e) in enumerate(context_pieces(st, en, a, b, self.window)):
+                        chains[f"ctx{j}"] = full[s:e]
+                    coords = _concatenate_coords(chains, "A", padding_length=10)
                 ll = self._ll_sums(coords, [ref[a:b]] + [seqs[i][a:b] for i in idx])
                 scores[idx] = ll[1:] - ll[0]
         return assign_scores_to_instances(instances, scores)
