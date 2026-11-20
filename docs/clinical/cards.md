@@ -19,7 +19,7 @@ Decisions (2026-11-17):
   `gnomad_af_random300`.
 - **MSAs** for all card proteins with the Genebass recipe (ColabFold on UniRef100 2026_01, no filtering).
 
-## Results (build without new MSAs, 2026-11-17)
+## Results (final build with MSAs, 2026-11-19)
 
 | Card | Archives (genes) | Rows | Card rows unmapped | Target |
 |---|---|---|---|---|
@@ -32,7 +32,9 @@ Decisions (2026-11-17):
 | `gnomad_af_random300` | 299 of 300 | 126,440 | 2,442 (1.89%) | `log10_af` |
 
 1,084 proteins in all. Every protein has its AFDB v6 structure except RERGL (AFDB model 205 aa vs Swiss-Prot
-2026_03 204 aa). MSAs: 7 reused from Genebass, 1,077 searched by the MSA chain (see Running).
+2026_03 204 aa). **Every archive has its MSA:** 7 reused from Genebass and 1,077 searched by the chain in 8 jobs
+of 2–6 h each. Depths: median 199k sequences, range 222 to 2.97M. Archives (compressed): 104 GB over the seven
+sets, from 3.6 GB (`dnm_aptest_ge2`) to 30 GB (`gnomad_af_clinvar_dnm_ge1`).
 
 **Check (`check_cards.py`): CHECK OK.**
 - **Selection:** the counts before mapping are identical to `summary.tsv` on all six existing cards (genes, rows,
@@ -64,11 +66,17 @@ RefSeq) differs in exon structure from the UniProt canonical isoform, so that no
 - Placing these needs the source protein sequences (MANE/RefSeq FASTA) and an alignment. That's a possible
   follow-up, or such genes could use the MANE protein as their wild type instead of UniProt canonical.
 
-## Running
+## Runs and files
 
 - **MSA search:** the card proteins in chunks of 150 (`submit.sh msa`), each 64 CPUs / 400 GB on genoa64.
-- **Rebuild:** when all chunks finish, the per-card build jobs start automatically (`afterok`), followed by the
-  check. Then commit the updated index CSVs (MSA depths).
+  - Jobs 31960150–31960164, 2026-11-18/19.
+  - The per-user memory limit runs the chunks one after another.
+- **Rebuild and check:** the per-card build jobs (31960166–31960175) ran after the search, followed by the check
+  (31960176: CHECK OK).
 
-Work dir: `/no_backup/diasfrazer/cpugh/pgb_clinical_cards` (logs and `logs/jobs.txt`, `cards/<card>/splits/`,
-`msas/`).
+Work dir: `/no_backup/diasfrazer/cpugh/pgb_clinical_cards`:
+- logs and `logs/jobs.txt`;
+- **final archives** in `cards/<card>/splits/`;
+- MSAs in `msas/` (502 GB);
+- staged per-protein inputs in `cards/build/proteins/` (copies of the MSAs; can be deleted, a rebuild recreates
+  them).

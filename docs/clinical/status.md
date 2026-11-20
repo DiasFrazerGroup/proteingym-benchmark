@@ -37,7 +37,7 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
   UniProt positions. Validated against the paper, AlphaMissense's own tables and raw AFDB files.
 - [x] **Benchmark-card archives** (branch `clinical/cards-data`, 2026-11-17): one PG2 archive set per
   clinical-curation card (ClinVar v0, DNM ap_test ≥1/≥1, ≥2/≥2, new random 300, gnomAD AF ×3), 1,084 proteins,
-  no model scores; CHECK OK against the cards. MSA search for the card proteins running. See [cards.md](cards.md).
+  no model scores, all with MSAs (2026-11-19); CHECK OK against the cards. See [cards.md](cards.md).
 - [x] **Reports:** [genebass.md](genebass.md), [long_proteins.md](long_proteins.md), this file. The project overview is in
   [project.md](project.md).
 
