@@ -44,6 +44,11 @@ hyper_parameters:
     # --- zoo model hyper-parameters (unchanged) ---
     # (fetching https://huggingface.co/thomashopf/evmutation2/resolve/main/
     # msa-only-small.ckpt at build() time)
+    # clinical (long proteins): the encoder steps that grow as L^3 or L^2 x channels (triangle attention, outer
+    # product mean, pair/MSA transitions, triangle multiplication, MSA pair-weighted averaging) run on blocks of rows
+    # when one tensor would exceed this many bytes (chunked_attention.py: exact, same arithmetic per element; the
+    # unchanged code runs out of memory at 1,367 aa on an 80 GB GPU). null = the unchanged evmutation2 code
+    attn_chunk_bytes: 4000000000
     model_file_path: "/opt/program/data/msa-only-small.ckpt"
     # Number of encoder samples (single/pair representations) drawn from the
     # MSA encoder and averaged over

@@ -1,7 +1,8 @@
 #!/bin/bash
 # Genebass runs of a *_filtered model: one validate_msa_filter.py run per protein (one container start each, so the
 # per-protein time and peak RSS are clean), scoring the union of the protein's Genebass mutants over all its archives.
-# Usage: sbatch [--mem/--time/--cpus-per-task ...] run_genebass.sbatch <image> <filtered folder> <UNIPROT> [<UNIPROT>...]
+# Usage: [HP='{"device": "cuda"}'] sbatch [--mem/--time/--cpus-per-task ...] run_genebass.sbatch <image> <filtered folder> <UNIPROT> [<UNIPROT>...]
+#   HP: optional JSON of card overrides passed to validate_msa_filter.py --hp (e.g. GPU for evmutation2)
 #   proteins and archives from $OUT/proteins.tsv (uniprot_id, gene, L, msa, n_mut, archives); outputs
 #   $OUT/<folder>__<UNIPROT>__genebass.{csv,json|failed.json}; finished proteins are skipped.
 #SBATCH --job-name=genebass_filtered
@@ -21,6 +22,6 @@ for U in "$@"; do
   FIRST=${ARCHS%%,*}
   echo "=== $U $(date +%T) archives $ARCHS"
   bash "$REPO/scripts/clinical/models/msa_filter/validate_msa_filter.sbatch" "$M" "$F" "$FIRST" "$TAG" \
-    --singles none --mutant-archives "$ARCHS"
+    --singles none --mutant-archives "$ARCHS" ${HP:+--hp "$HP"}
 done
 echo "GENEBASS FILTERED DONE"

@@ -49,6 +49,8 @@ def main():
     ap.add_argument("--hp", default="{}", help="JSON dict overriding card hyper_parameters")
     ap.add_argument("--class", dest="cls", default=None, help="model class import string (default: card)")
     ap.add_argument("--singles", default="all", help="'all', 'none' or a number of single substitutions to sample")
+    ap.add_argument("--seed", type=int, default=None,
+                    help="seed python/numpy/torch RNGs before build and before score (stochastic models: EVmutation2)")
     ap.add_argument("--mutant-archives", default="",
                     help="comma-separated archive file names (same folder as <archive>) whose variants are scored too")
     a = ap.parse_args()
@@ -126,6 +128,13 @@ def _run(a, rec, hp, Model, dataset_to_evedesign, seqs_to_instances, Subsets, t0
     seqs = [apply(m) for m in muts] + [wt]
     rec["n_scored"] = len(muts)
 
+    def seed_all():
+        if a.seed is not None:
+            import random
+            import torch
+            random.seed(a.seed); np.random.seed(a.seed); torch.manual_seed(a.seed)
+
+    seed_all()
     t1 = time.time()
     model = Model(**hp).build(system, data=None)
     rec["t_build_s"] = round(time.time() - t1, 1)
@@ -140,12 +149,19 @@ def _run(a, rec, hp, Model, dataset_to_evedesign, seqs_to_instances, Subsets, t0
             last[0] = time.time()
             log(f"score progress {pct} {msg}")
 
+    seed_all()
     t2 = time.time()
     try:
         scored = model.score(seqs_to_instances(seqs), status_callback=progress)
     except TypeError:
         scored = model.score(seqs_to_instances(seqs))
     rec["t_score_s"] = round(time.time() - t2, 1)
+    try:
+        import torch
+        if torch.cuda.is_available():
+            rec["gpu_peak_gb"] = round(torch.cuda.max_memory_allocated() / 2**30, 2)
+    except ImportError:
+        pass
     s = np.array([np.nan if x.score is None else float(x.score) for x in scored])
     df = pd.DataFrame(dict(mutant=muts, in_archive=[m in arch for m in muts], score=s[:-1], pred=s[:-1] - s[-1]))
     df.to_csv(a.out / f"{a.tag}.csv", index=False)
