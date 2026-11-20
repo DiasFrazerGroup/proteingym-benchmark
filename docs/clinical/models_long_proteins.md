@@ -98,6 +98,14 @@ Fig. 6b), while ESM-2 and ESM-1v prefer masked. Offer it as a separate card, not
 - **ESM-IF1:** tiles of `window` residues every `window/2`; each mutant scored in the tile where it is most
   central, as Σ log p(mutant | tile backbone) − Σ log p(wt | tile backbone), batched. For L ≤ window this is
   L·(zoo score(mut) − zoo score(wt)): a per-protein linear transform of the zoo score.
+  **Final (user decision 2026-11-19): `window: 500, context: true`**, the dark-energy method
+  (`dark_energy_mane/scripts/awsem/esm/esm_if_logit_longprot.py`): ESM-IF1 was trained on chains ≤ 500 aa (Hsu et al.
+  2022, A.1) and its wild-type recovery falls from ~0.49 to ~0.09 past residue 500 when run at full length; the
+  target tile is decoded with the rest of the protein as context chains (ESM multichain layout). The script's context
+  handling is fixed (no overlapping/skipped context residues, no 5-chain cap, only the target decoded, no weighted
+  log-p merging). Genebass 1.66 vs 1.27 at full length (100 pairs, same rows). Details and evidence:
+  [report/models/esm-if1_window.md](report/models/esm-if1_window.md). Full length (`window: 2700`, 2026-11-19) and
+  1,022 tiles are superseded.
 - **Fragments (proteins > 2,700 aa):** for each position use the fragment where it is most central (never the
   dark_energy unweighted mean over fragments: PottsMPNN scores disagree between fragments by up to 16.6, mean 1.56).
   Fragment spans are in the manifest (`[structures.metadata] span_start/span_end`).
@@ -412,8 +420,8 @@ Planned folders (copies of the zoo folder, same Dockerfile/Singularity.def/lockf
 | `models/structuredca_filtered` | `StructureDCAFiltered` | zoo `structuredca` (`model.py` copied verbatim) |
 | `models/evmutation_filtered` | `EVmutationFiltered` | `evedesign.models.evcouplings:EVcouplingsPLM` |
 | `models/eve_filtered` | `EVEFiltered` | `evedesign.models.eve:EVE` (evedesign 0.0.6) |
-| `models/evmutation2_filtered` | `EVmutation2Filtered` | `evedesign.models.evmutation2:EVmutation2` (not tested: ~1,000 aa GPU limit) |
-| `models/gemme_filtered` | `GEMMEFiltered` | zoo `gemme` (`model.py` copied verbatim; not tested: image does not build) |
+| `models/evmutation2_filtered` | `EVmutation2Filtered` | `evedesign.models.evmutation2:EVmutation2` + exact chunked encoder (`chunked_attention.py`, report/models/evmutation2_filtered.md) |
+| `models/gemme_filtered` | `GEMMEFiltered` | zoo `gemme` (`model.py` copied, plus the `output` option evolEpi/evolCombi; image from pinned local tarballs) |
 | `models/proteinmpnn` | `ProteinMPNN` (seeds the decoding order) | `evedesign.models.mpnn:LigandMPNN`, weights v_48_020 (new zoo folder, §3.7) |
 | `models/proteinmpnn_window` | `ProteinMPNNWindow` | `models/proteinmpnn` (fragments, §3.7) |
 | `models/pottsmpnn_window` | `PottsMPNNWindow` | zoo `pottsmpnn` (fragments, §3.7) |
@@ -719,6 +727,9 @@ seeds 0–4 (`EVE_ensemble`), the zoo runs one seed. Jobs 31967282–85, 3197487
 
 ## 10. Picking this up
 
+**Final report (2026-11-20):** [report/README.md](report/README.md) (summary, decisions, data modifications, results)
+and one page per model in [report/models/](report/models/). Benchmark capped at 2,700 aa (63 proteins, 100 pairs).
+
 **Progress note (inverse-folding models, 2026-11-19):** ProteinMPNN and PottsMPNN done for every Genebass protein
 (§3.7): images built, T1 passed, predictions in `predictions/v2__{proteinmpnn,pottsmpnn}_window/`. Next: add them to
 `17_eval_common_variants.py` (they score every variant, so they do not shrink the common set).
@@ -742,7 +753,8 @@ seeds 0–4 (`EVE_ensemble`), the zoo runs one seed. Jobs 31967282–85, 3197487
 5. NaN policy for the PG2 metrics (§3.6 "NaN in the pipeline", §8 item 5).
 6. Images for the `*_filtered` folders (`build_images.sbatch rsalor_filtered ...`); validation ran in the zoo
    images with the package mounted. GEMME still has no image (download server), `gemme_filtered` untested;
-   `evmutation2_filtered` untested (~1,000 aa GPU limit, T5).
+   `evmutation2_filtered` untested (~1,000 aa GPU limit, T5). [2026-11-20: done. GEMME image built, EVmutation2
+   runs to 2,570 aa with the chunked encoder; see report/README.md.]
 
 **Progress note (T5, alignment models, 2026-11-17):** T5 done (§9, T5 results). Region code in
 `scripts/clinical/models/regions/`, archives in `$WORK/models/regions/archives/`, predictions in
