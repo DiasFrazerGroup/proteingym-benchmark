@@ -76,12 +76,15 @@ header restore.
 ## Results (Genebass, mean −log10 P of r(β, score), VESM Fig. 6b metric)
 
 Final evaluation: `results/genebass_common_variants_final.tsv` (prototype repo, job 32052952). Columns:
-- **common** = the 5,750 rows of the 100 pairs that every model scores (EVmutation's 264 gap-column mutants and
-  a few reference NaNs removed; popEVE has 97 pairs);
-- **own** = each model on all the rows it scores within the cap;
+- **scored by every model** = 5,750 variant rows of the 100 pairs. The ≤ 2,700 aa set has 6,066 rows; this drops
+  the 316 rows at the 264 mutants EVmutation does not score (gap columns). It is the fair comparison: same rows for
+  every model. popEVE has 97 pairs.
+- **all variants** = all 6,066 rows, wherever the model has a score. That is 6,066 for every model except EVmutation
+  (5,750). References: CADD and allele frequency 6,063, popEVE 5,734. Never fewer rows than "scored by every
+  model";
 - **all 109** = including the 9 pairs above 2,700 aa, only for models that score them (not comparable).
 
-| Model | Type | common (100 pairs) | own (≤ 2,700 aa) | rows own | all 109 pairs |
+| Model | Type | scored by every model (5,750) | all variants (≤ 2,700 aa) | rows, all variants | all 109 pairs |
 |---|---|---|---|---|---|
 | AlphaMissense (layer) | reference | 2.441 | 2.643 | 6,066 | 2.695 |
 | `structuredca_filtered` | alignment + structure | **2.281** | **2.471** | 6,066 | — |
@@ -101,15 +104,17 @@ Final evaluation: `results/genebass_common_variants_final.tsv` (prototype repo, 
 | `proteinmpnn_window` | inverse folding | 1.172 | 1.268 | 6,066 | 1.320 |
 
 - Rows are in the TSV's order (by the 2,300 aa column).
-- **Common vs own rows.** Two models move:
-  - EVmutation drops from 2nd to 5th among the models. Its own rows are the common rows, because it is the model
-    whose 264 gap-column NaN define them.
+- **Scored by every model vs all variants.**
+  - Every model except allele frequency scores higher on all variants, so the 316 dropped rows carry more signal
+    than average.
+  - Two models move. EVmutation drops from 2nd to 5th among the models: its all-variant rows are the rows scored by
+    every model, because its 264 gap-column NaN define them.
   - CADD moves above allele frequency.
   - The rest keep their order.
-- **ESM-IF1 versions** (own rows): the dark-energy method gives 1.663. Full length gives 1.270, and the old
+- **ESM-IF1 versions** (all 6,066 variants): the dark-energy method gives 1.663. Full length gives 1.270, and the old
   1,022-residue tiles give 1.250 (`results/genebass_esmif1_versions.tsv`). Details:
   [esm-if1_window](models/esm-if1_window.md).
-- **At 2,300 aa** (97 pairs, column `le2300` in the TSV): every model is 0.02–0.07 higher on common rows.
+- **At 2,300 aa** (97 pairs, column `le2300` in the TSV): every model is 0.02–0.07 higher on the rows scored by every model.
   - The exception is popEVE: it has the same 97 pairs in both, so its value does not change.
   - As a result popEVE falls behind EVmutation at 2,300 aa. The order of everything else is the same.
 - `esm-if1_window` has no "all 109" value: the dark-energy run was made for the capped set only.

@@ -28,7 +28,7 @@ The filter also makes StructureDCA feasible: the zoo timed out after more than 2
 | RSALOR | 39 min | 2 min | 0 |
 | StructureDCA | 303 min | 22 min | 0 |
 
-Peak memory is at most 9 GB, mostly the MSA load. Capped set (own rows): StructureDCA 2.471, RSALOR 2.151.
+Peak memory is at most 9 GB, mostly the MSA load. Capped set (all 6,066 variants): StructureDCA 2.471, RSALOR 2.151.
 
 The earlier `v2__rsalor` (T5 region run, W = 1,000) is superseded by `v2__rsalor_filtered`.
 

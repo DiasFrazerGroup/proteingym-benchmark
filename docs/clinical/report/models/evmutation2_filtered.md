@@ -71,7 +71,7 @@ Predictions: `predictions/v2__evmutation2_filtered/`.
 - Jobs 32028635, 32028636 (3g.40gb) and 32044587 (7g.80gb). The OOM records from 40 GB are kept in
   `$WORK/models/msa_filter/genebass/evm2_oom_40gb/`.
 - Single run per protein, unseeded, as the zoo runs it.
-- Capped set: 1.937 on the common rows and 2.092 on its own rows (= all rows, 100 pairs).
+- Capped set: 1.937 on the 5,750 variants scored by every model and 2.092 on all 6,066 variants (100 pairs).
   - That is below the other alignment models (EVmutation 2.208, GEMME 2.35, StructureDCA 2.47).
   - It is above CADD and the inverse-folding models.
 

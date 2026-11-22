@@ -32,7 +32,7 @@ Predictions: `predictions/v2__gemme_filtered__evolEpi/` (zoo default) and `v2__g
 - JET2's iJET resampling is unseeded upstream, so repeated runs differ slightly (Spearman about 0.998).
 - **Genebass:** 63 proteins, CPU, 250 min in total, at most 10 min and 11 GB per protein (SPTA1).
 - evolEpi vs evolCombi per protein: median Spearman 0.95 (0.83–0.98).
-- Capped set (100 pairs, own rows): evolCombi 2.352, evolEpi 2.341.
+- Capped set (100 pairs, all 6,066 variants): evolCombi 2.352, evolEpi 2.341.
 
 ## Above 2,700 aa
 

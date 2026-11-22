@@ -6,7 +6,7 @@ Status 2026-11-20: final, 63/63 proteins of the capped set. Predictions: `predic
 
 - Shared MSA filter ([msa_filter_shared.md](msa_filter_shared.md)).
 - **NaN for mutants in columns the model excludes** (more than 50% gaps, unweighted). The zoo scores them as the wild
-  type (0). That leaves 264 of 4,653 Genebass mutants unscored, and they define the "common rows" of the benchmark.
+  type (0). That leaves 264 of 4,653 Genebass mutants unscored, and they define the benchmark's "variants scored by every model" (5,750 of 6,066 rows).
 - The card is the zoo's: theta 0.8, λ_h = λ_J = 0.01, 100 iterations.
 
 ## Validation
@@ -17,7 +17,7 @@ Status 2026-11-20: final, 63/63 proteins of the capped set. Predictions: `predic
   0.972 (Pearson 0.987; our input keeps 54 columns EVcouplings drops).
 - **Genebass:** 63 proteins, CPU (genoa64), 1,939 CPU-min in total. The largest are SPTA1 (215 min, 74 GB),
   ABCA1 (100 min, 69 GB) and STAB1 (32 min, 74 GB).
-- Capped set: 2.208 (common rows = its own rows).
+- Capped set: 2.208 (its scored rows are the variants scored by every model).
 
 ## Above 2,700 aa
 
