@@ -1,4 +1,4 @@
-gene	origin	protein_length	n_mapped_rows
+gene	origin	protein_length	n_mapped_variants
 ABCA4	original_draw	2273	1
 ABCC9	original_draw	1549	9
 ABTB2	original_draw	1025	2

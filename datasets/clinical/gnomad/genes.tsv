@@ -1,4 +1,4 @@
-gene	origin	protein_length	n_mapped_rows
+gene	origin	protein_length	n_mapped_variants
 ABCB8	original_draw	735	711
 ABHD8	original_draw	439	382
 ACKR3	original_draw	362	297

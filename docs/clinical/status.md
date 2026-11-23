@@ -35,9 +35,9 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
   proteins: 4 h 24 min on 64 CPUs, 38 GB.
 - [x] **Annotation layers** for any archive: AlphaMissense, popEVE and CADD (dbNSFP 5.3.1a); pLDDT, full length and
   UniProt positions. Validated against the paper, AlphaMissense's own tables and raw AFDB files.
-- [x] **Benchmark-card archives** (branch `clinical/cards-data`, 2026-11-17): one PG2 archive set per
-  clinical-curation card (ClinVar v0, DNM ap_test ≥1/≥1, ≥2/≥2, new random 300, gnomAD AF ×3), 1,084 proteins,
-  no model scores, all with MSAs (2026-11-19); CHECK OK against the cards. See [cards.md](cards.md).
+- [x] **ClinVar, de novo and gnomAD benchmarks** (branch `clinical/cards-data`, 2026-11-23): one PG2 archive per
+  gene; ClinVar 158 genes, de novo and gnomAD 300 random genes each; all with structures and MSAs, no model
+  scores; CHECK OK. See [clinvar_denovo_gnomad.md](clinvar_denovo_gnomad.md).
 - [x] **Reports:** [genebass.md](genebass.md), [long_proteins.md](long_proteins.md), this file. The project overview is in
   [project.md](project.md).
 

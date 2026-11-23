@@ -1,46 +1,43 @@
-"""Prepare the clinical benchmark-card variant sets for archiving: selection, protein choice, UniProt mapping.
+"""Prepare the ClinVar, de novo and gnomAD benchmarks: variant selection, protein choice, UniProt mapping.
 
-The cards are defined in clinical-curation (scripts/16_benchmark_cards.py -> benchmark_cards/). This re-derives
-each card's variant rows from the same curation tables with the same rules, then places every row on a UniProt
-(Swiss-Prot canonical) wild type, so build_cards.py can write one PG2 archive per gene and card.
+The variant tables come from the clinical-curation repo. This selects each benchmark's variants, then places every
+variant on a UniProt (Swiss-Prot canonical) wild type, so build.py can write one PG2 archive per gene.
 
-Cards (one archive set each; `complete` = scored by all six card models, the card's performance set):
-  clinvar_v0                 ClinVar v0 (>=2 stars, germline, P/LP vs B/LB, genes >=10 of each)   target label
-  dnm_aptest_ge1             popEVE ST5 ap_test_set DNMs, genes >=1 case & >=1 control             target dnm_case
-  dnm_aptest_ge2             same, >=2 & >=2 (= DNM v1)                                           target dnm_case
-  dnm_aptest_random300       same, 300 random ap_test_set genes (seed 0; NEW, no card yet)*        target dnm_case
-  gnomad_af_clinvar_dnm_ge1  gnomAD v4.1 rare missense (non-UKB AF < 0.1%, AN >= 50% of max),
-                             genes of clinvar_v0 U dnm_aptest_ge1                                  target log10_af
-  gnomad_af_clinvar_dnm_ge2  same, genes of clinvar_v0 U dnm_aptest_ge2                            target log10_af
-  gnomad_af_random300        same, benchmark_cards/gnomad_af_random300_genes.tsv*                  target log10_af
-  * Exactly 300 genes, each with a protein <= 2,700 aa and mapped rows (gnomAD: >= 20, the card's per-gene
-    minimum): the original draw's usable genes, topped up with replacements drawn from the same pool (seed 1, in
-    order). Gene lists with origin: <genes-out>/<card>_genes.tsv.
-The reference cards dnm_aptest_full and gnomad_af_full are not archived.
+Benchmarks:
+  clinvar  ClinVar missense (Nov 2026 release): >= 2 review stars, germline, pathogenic / likely pathogenic vs
+           benign / likely benign, genes with >= 10 of each                                         target label
+  denovo   de novo missense variants of the popEVE paper (Orenbuch et al. 2025, Suppl. Table 5), ap_test_set:
+           severe developmental disorder cases vs controls; 300 random genes*                       target dnm_case
+  gnomad   gnomAD v4.1 exome rare missense (PASS, MANE Select, non-UKB AF < 0.1%, AN >= 50% of max);
+           300 random genes*                                                                         target log10_af
+  * Exactly 300 genes, each with a protein <= 2,700 aa and mapped variants (gnomAD: >= 20). De novo: drawn from all
+    ap_test_set genes (seed 0). gnomAD: the 300 genes drawn in clinical-curation (seed 0, from genes with >= 20
+    scored rare variants). Genes that fail the rule are replaced by genes from the same pool in a fixed random order
+    (seed 1). Gene lists with each gene's origin: datasets/clinical/<benchmark>/genes.tsv.
 
-Protein per gene: the Swiss-Prot accession that most of the gene's SNVs map to in the AlphaMissense hg38 SNV index
-(UniProt canonical isoforms); genes without SNV hits fall back to Swiss-Prot by gene symbol.
-Mapping per row (column `mapping`):
-  am_snv_index        the row's SNV(s) -> protein change on that accession, wild-type residue checked. ClinVar and
-                      gnomAD are GRCh38 (AlphaMissense hg38 index); the popEVE DNMs are GRCh37 (AlphaMissense hg19
-                      table, same isoforms), and their GRCh38 SNV is then recovered from the hg38 index
-                      (variant_id; the source coordinate is kept as variant_id_grch37)
-  source_offset+k     source numbering (RefSeq / MANE protein) shifted by a constant offset k, fitted per (gene,
-                      source isoform) on that isoform's SNV-mapped rows, or else on its remaining rows: accepted when
-                      >= 90% of >= 10 rows match the wild-type residue, applied only to rows whose residue matches.
-                      Isoforms with < 10 rows reuse an offset accepted for the gene if all their residues match.
-                      (Needed for genes absent from the AlphaMissense canonical set, e.g. CACNA1C, COG4, TTC8.)
-  otherwise dropped, listed in <out>/<card>/unmapped_rows.tsv
+Protein per gene: the Swiss-Prot accession that most of the gene's SNVs map to in the AlphaMissense tables (UniProt
+canonical isoforms); genes without SNV hits fall back to Swiss-Prot by gene symbol.
+Mapping per variant (column `mapping`):
+  am_snv_index        the variant's SNV(s) -> protein change on that accession, wild-type residue checked. ClinVar and
+                      gnomAD are GRCh38 (AlphaMissense hg38 index); the de novo variants are GRCh37 (AlphaMissense hg19
+                      table, same isoforms), and their GRCh38 SNV is recovered from the hg38 index (variant_id; the
+                      source coordinate is kept as variant_id_grch37)
+  source_offset+k     source protein numbering (RefSeq / MANE) shifted by a constant offset k, fitted per (gene,
+                      source isoform) on that isoform's SNV-mapped variants, or else on its remaining variants:
+                      accepted when >= 90% of >= 10 variants match the wild-type residue, applied only to variants
+                      whose residue matches. Isoforms with < 10 variants reuse an offset accepted for the gene if all
+                      their residues match. (Needed for genes absent from the AlphaMissense canonical set.)
+  otherwise dropped, listed in <out>/<benchmark>/unmapped_rows.tsv
 
 Outputs (--out):
-  <card>/variants.tsv.gz   mapped rows: gene, uniprot_id, mutant (UniProt numbering), target, provenance, scores
-  <card>/unmapped_rows.tsv rows that could not be placed
-  selection_counts.tsv     per card, genes / rows before mapping (compare with benchmark_cards/summary.tsv)
-  proteins.tsv             one row per protein: gene, accession, entry, length, how chosen, reusable MSA
-  queries.fasta            Swiss-Prot wild types of proteins with no reusable MSA (input of the MSA search)
-and --genes-out/dnm_aptest_random300_genes.tsv (the new random DNM gene list, committed).
+  <benchmark>/variants.tsv.gz   mapped variants: gene, uniprot_id, mutant (UniProt numbering), target, provenance;
+                                plus clinical-curation's reference scores, used only by check.py (never archived)
+  <benchmark>/unmapped_rows.tsv variants that could not be placed
+  selection_counts.tsv          per benchmark, genes / variants before mapping
+  proteins.tsv                  one row per protein: gene, accession, entry, length, how chosen, reusable MSA
+  queries.fasta                 Swiss-Prot wild types of proteins with no reusable MSA (input of the MSA search)
 
-Run (proteingym_clinical env; ~30 GB RAM for the gnomAD table): see cards.sbatch.
+Run (proteingym_clinical env; ~30 GB RAM for the gnomAD table): bash scripts/clinical/benchmarks/submit.sh prepare
 """
 import argparse
 import re
@@ -54,33 +51,27 @@ import pyarrow.dataset as pads
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from build_genebass import read_sprot  # noqa: E402
 
+# clinical-curation reference scores (check.py only)
 MODELS = ["am", "popeve", "cadd", "esm1b", "vesm", "gpn_msa"]
 SCORE_COL = {"am": "score_alphamissense", "popeve": "score_popeve", "cadd": "score_cadd_phred",
              "esm1b": "score_esm1b", "vesm": "score_vesm3b", "gpn_msa": "score_gpn_msa"}
+BASE_MODELS = ["am", "popeve", "cadd"]          # clinical-curation's gnomAD random-300 eligibility models
 MIN_N, RARE, OFFSET_MIN, OFFSET_FRAC = 20, 1e-3, 10, 0.9
-BASE_MODELS = ["am", "popeve", "cadd"]          # the gnomAD random-300 eligibility models (scripts/16)
-MAX_LEN, REPLACE_BUFFER = 2700, 100             # random300 sets: protein length cap; replacement candidates mapped
+N_GENES, MAX_LEN, REPLACE_BUFFER = 300, 2700, 100
 MUT = re.compile(r"^([A-Z])(\d+)([A-Z])$")
 
-CARDS = {  # name: (source, target)
-    "clinvar_v0": ("clinvar", "label"),
-    "dnm_aptest_ge1": ("dnm", "dnm_case"),
-    "dnm_aptest_ge2": ("dnm", "dnm_case"),
-    "dnm_aptest_random300": ("dnm", "dnm_case"),
-    "gnomad_af_clinvar_dnm_ge1": ("gnomad", "log10_af"),
-    "gnomad_af_clinvar_dnm_ge2": ("gnomad", "log10_af"),
-    "gnomad_af_random300": ("gnomad", "log10_af"),
+BENCHMARKS = {  # name: (source table, target)
+    "clinvar": ("clinvar", "label"),
+    "denovo": ("dnm", "dnm_case"),
+    "gnomad": ("gnomad", "log10_af"),
 }
-EXTRA = {  # card-specific non-target columns kept in the assay
+EXTRA = {  # source-specific non-target columns kept in the assay
     "clinvar": ["hgvsp", "source_transcript", "clnsig", "max_stars", "n_records"],
     "dnm": ["variant_id_grch37", "source_protein", "n_sdd", "n_control"],
     "gnomad": ["af", "AC_non_ukb", "AN_non_ukb", "AC", "AN", "enst", "mane_select"],
 }
-
-
-def gene_filter(d, y, k):
-    g = d.groupby("gene")[y].agg(["sum", "size"])
-    return d[d.gene.isin(g[(g["sum"] >= k) & (g["size"] - g["sum"] >= k)].index)].copy()
+KEYS = {"clinvar": ["gene", "hgvsp"], "dnm": ["variant_id", "gene", "mutant_source"],
+        "gnomad": ["variant_id", "gene", "enst"]}
 
 
 def split_mut(m):
@@ -90,7 +81,7 @@ def split_mut(m):
 
 def load_sources(cur):
     bm = cur / "data/processed/benchmarks"
-    # ClinVar v0: one row per (gene, protein change); SNVs from clinvar_v0_snvs.tsv (several per change possible)
+    # ClinVar: one row per (gene, protein change); SNVs from clinvar_v0_snvs.tsv (several per change possible)
     cv = pd.read_csv(bm / "clinvar_v0_scores.tsv", sep="\t", low_memory=False)
     cv = cv.merge(pd.read_csv(bm / "clinvar_v0_extra_scores.tsv", sep="\t"), on=["gene", "hgvs_p"], how="left",
                   validate="1:1")
@@ -100,14 +91,14 @@ def load_sources(cur):
                   .reset_index(), on=["gene", "hgvs_p"], how="left", validate="1:1")
     cv = cv.rename(columns={"hgvs_p": "hgvsp", "tx": "source_transcript", "mutant": "mutant_source"})
 
-    # DNMs: ap_test_set table (popEVE = gnomAD version, as the cards)
+    # de novo variants: ap_test_set table (GRCh37)
     dn = pd.read_csv(bm / "dnm_aptest_scores.tsv", sep="\t", low_memory=False, dtype={"chrom": str, "pos": str})
     dn = dn.merge(pd.read_csv(bm / "dnm_aptest_extra_scores.tsv", sep="\t", dtype={"chrom": str, "pos": str}),
                   on=["chrom", "pos", "ref", "alt"], how="left", validate="m:1")
     dn["variant_id"] = dn.chrom.str.removeprefix("chr") + "-" + dn.pos + "-" + dn.ref + "-" + dn.alt
     dn = dn.rename(columns={"protein": "source_protein", "mutant": "mutant_source"})
 
-    # gnomAD rare missense (popEVE = UKBB), filters exactly as scripts/16
+    # gnomAD rare missense
     usecols = ["gene", "chrom", "pos", "ref", "alt", "AC", "AN", "AC_non_ukb", "AN_non_ukb", "enst", "mane_select",
                "prot_pos", "wt", "mt", "am", "popeve", "cadd"]
     g = pd.read_csv(cur / "data/interim/gnomad_missense_scores_all.tsv.gz", sep="\t", usecols=usecols,
@@ -123,63 +114,59 @@ def load_sources(cur):
     return cv, dn, g
 
 
-def select(cur, cv, dn, g):
-    """Card name -> rows (before mapping), as scripts/16_benchmark_cards.py; and for the two random300 sets,
-    (original draw, replacement candidates in random order). Their rows cover both; finalise_random() picks 300."""
-    c = {"clinvar_v0": cv.copy(),
-         "dnm_aptest_ge1": gene_filter(dn, "dnm_case", 1),
-         "dnm_aptest_ge2": gene_filter(dn, "dnm_case", 2)}
-    pool = np.array(sorted(dn.gene.unique()))
-    orig = sorted(np.random.default_rng(0).choice(pool, 300, replace=False))
-    rand = {"dnm_aptest_random300": (orig, replacement_order(pool, orig))}
-    cvg = set(cv.gene)
-    orig = sorted(pd.read_csv(cur / "benchmark_cards/gnomad_af_random300_genes.tsv", sep="\t").gene)
-    nper = g.dropna(subset=BASE_MODELS).groupby("gene").size()       # the card's eligible pool (scripts/16)
-    rand["gnomad_af_random300"] = (orig, replacement_order(np.array(sorted(nper[nper >= MIN_N].index)), orig))
-    c["dnm_aptest_random300"] = dn[dn.gene.isin(set().union(*rand["dnm_aptest_random300"]))].copy()
-    for name, genes in [("gnomad_af_clinvar_dnm_ge1", cvg | set(c["dnm_aptest_ge1"].gene)),
-                        ("gnomad_af_clinvar_dnm_ge2", cvg | set(c["dnm_aptest_ge2"].gene)),
-                        ("gnomad_af_random300", set().union(*rand["gnomad_af_random300"]))]:
-        c[name] = g[g.gene.isin(genes)].copy()
-    return c, rand
-
-
 def replacement_order(pool, orig, n=REPLACE_BUFFER):
     """Replacement candidates: the pool minus the original draw, in a fixed random order (seed 1)."""
     rest = np.array(sorted(set(pool) - set(orig)))
     return list(np.random.default_rng(1).permutation(rest)[:n])
 
 
-def finalise_random(cards, rand, keys, mp, prots, genes_out):
-    """random300 sets: keep the original draw's genes that are usable, top up to 300 with replacement candidates in
-    order. Usable = protein <= MAX_LEN aa and enough mapped rows (gnomAD: >= MIN_N, the card's per-gene minimum;
-    DNM: >= 1). Writes <genes_out>/<card>_genes.tsv (gene, origin, protein length, mapped rows)."""
+def select(cur, cv, dn, g):
+    """Benchmark -> variants (before mapping); for the random-gene benchmarks also (original draw, replacement
+    candidates). Their variants cover both; finalise_random() picks the 300 genes after mapping."""
+    pool = np.array(sorted(dn.gene.unique()))
+    orig = sorted(np.random.default_rng(0).choice(pool, N_GENES, replace=False))
+    rand = {"denovo": (orig, replacement_order(pool, orig))}
+    orig = sorted(pd.read_csv(cur / "benchmark_cards/gnomad_af_random300_genes.tsv", sep="\t").gene)
+    nper = g.dropna(subset=BASE_MODELS).groupby("gene").size()       # the pool it was drawn from
+    rand["gnomad"] = (orig, replacement_order(np.array(sorted(nper[nper >= MIN_N].index)), orig))
+    b = {"clinvar": cv.copy(),
+         "denovo": dn[dn.gene.isin(set().union(*rand["denovo"]))].copy(),
+         "gnomad": g[g.gene.isin(set().union(*rand["gnomad"]))].copy()}
+    return b, rand
+
+
+def finalise_random(bench, rand, mp, prots, genes_out):
+    """Keep the original draw's usable genes, top up to N_GENES with replacement candidates in order.
+    Usable = protein <= MAX_LEN aa and enough mapped variants (gnomAD: >= MIN_N; de novo: >= 1).
+    Writes <genes_out>/<benchmark>/genes.tsv (gene, origin, protein length, mapped variants)."""
     length = prots.set_index("gene").length
     for n, (orig, repl) in rand.items():
-        s, _ = CARDS[n]
-        d = cards[n]
-        k = s + ":" + d[keys[s]].astype(str).agg("|".join, axis=1)
+        s, _ = BENCHMARKS[n]
+        d = bench[n]
+        k = s + ":" + d[KEYS[s]].astype(str).agg("|".join, axis=1)
         nmap = d[k.isin(mp.index)].groupby("gene").size()
         need = MIN_N if s == "gnomad" else 1
 
         def usable(gn):
             return gn in length.index and length[gn] <= MAX_LEN and nmap.get(gn, 0) >= need
         keep = [x for x in orig if usable(x)]
-        add = [x for x in repl if usable(x)][: 300 - len(keep)]
-        assert len(keep) + len(add) == 300, (n, len(keep), len(add))
-        why = {x: ("protein > %d aa" % MAX_LEN if x in length.index and length[x] > MAX_LEN else
-                   f"< {need} mapped rows") for x in orig if x not in keep}
-        print(f"{n}: kept {len(keep)} of the original 300, replaced {len(why)} ({why}) by {add}", flush=True)
-        cards[n] = d[d.gene.isin(set(keep) | set(add))].copy()
+        add = [x for x in repl if usable(x)][: N_GENES - len(keep)]
+        assert len(keep) + len(add) == N_GENES, (n, len(keep), len(add))
+        why = {str(x): (f"protein > {MAX_LEN} aa" if x in length.index and length[x] > MAX_LEN else
+                        f"< {need} mapped variants") for x in orig if x not in keep}
+        print(f"{n}: kept {len(keep)} of the original {N_GENES}, replaced {len(why)} {why} by "
+              f"{[str(x) for x in add]}", flush=True)
+        bench[n] = d[d.gene.isin(set(keep) | set(add))].copy()
+        (genes_out / n).mkdir(parents=True, exist_ok=True)
         pd.DataFrame({"gene": keep + add, "origin": ["original_draw"] * len(keep) + ["replacement"] * len(add),
                       "protein_length": [int(length[x]) for x in keep + add],
-                      "n_mapped_rows": [int(nmap[x]) for x in keep + add]}).sort_values("gene").to_csv(
-            genes_out / f"{n}_genes.tsv", sep="\t", index=False)
+                      "n_mapped_variants": [int(nmap[x]) for x in keep + add]}).sort_values("gene").to_csv(
+            genes_out / n / "genes.tsv", sep="\t", index=False)
 
 
 def counts(name, d):
-    src, y = CARDS[name]
-    out = {"card": name}
+    src, y = BENCHMARKS[name]
+    out = {"benchmark": name}
     for s, x in [("all", d), ("complete", d.dropna(subset=MODELS))]:
         if src == "gnomad":
             n = x.groupby("gene").size()
@@ -207,7 +194,7 @@ def snv_lookup(index_path, vids):
 
 def snv_lookup_hg19(am_hg19, vids):
     """GRCh37 SNV ids -> DataFrame(variant_id, uniprot_id, protein_variant), from AlphaMissense_hg19.tsv.gz
-    (same UniProt canonical isoforms as the hg38 table). The popEVE DNM coordinates are GRCh37."""
+    (same UniProt canonical isoforms as the hg38 table)."""
     pos, out = _positions(vids), []
     for ch in pd.read_csv(am_hg19, sep="\t", skiprows=3, chunksize=5_000_000, dtype={"POS": int},
                           usecols=["#CHROM", "POS", "REF", "ALT", "uniprot_id", "protein_variant"]):
@@ -247,7 +234,7 @@ def best_offset(aa, pos, wt, max_shift=500):
 
 
 def shift(li, o, wt, acc):
-    """Rows of li whose source residue matches wt at source position + o, placed on UniProt numbering."""
+    """Variants of li whose source residue matches wt at source position + o, placed on UniProt numbering."""
     ok = [0 < p + o <= len(wt) and wt[int(p + o) - 1] == a and a != b
           for a, p, b in zip(li.src_wt, li.src_pos, li.src_mt)]
     x = li[ok]
@@ -256,7 +243,7 @@ def shift(li, o, wt, acc):
 
 
 def map_rows(rows, sp, gene2acc, ex):
-    """rows: DataFrame(key, gene, mutant_source); ex: SNV hits DataFrame(key, uniprot_id, protein_variant).
+    """rows: DataFrame(key, gene, mutant_source, src_iso); ex: SNV hits DataFrame(key, uniprot_id, protein_variant).
     Returns (proteins, mapped, unmapped)."""
     r = rows.copy()
     r[["src_wt", "src_pos", "src_mt"]] = pd.DataFrame([split_mut(m) for m in r.mutant_source], index=r.index)
@@ -283,10 +270,10 @@ def map_rows(rows, sp, gene2acc, ex):
                 hit[k] = pv
         g1 = gr[gr.key.isin(hit)].assign(uniprot_id=acc, mutant=lambda x: x.key.map(hit), mapping="am_snv_index")
         left = gr[~gr.key.isin(hit)]
-        # rows without an SNV hit: constant offset between the source isoform's numbering and UniProt, one per
-        # (gene, source isoform), from that isoform's SNV-mapped rows when there are enough, else from its
-        # remaining rows; accepted when >= OFFSET_FRAC of >= OFFSET_MIN rows match the wild-type residue, applied
-        # only to rows whose residue matches
+        # variants without an SNV hit: constant offset between the source isoform's numbering and UniProt, one per
+        # (gene, source isoform), from that isoform's SNV-mapped variants when there are enough, else from its
+        # remaining variants; accepted when >= OFFSET_FRAC of >= OFFSET_MIN match the wild-type residue, applied
+        # only to variants whose residue matches
         new, accepted, small = [], [], []
         for iso, li in left.groupby("src_iso", dropna=False, sort=False):
             li = li[li.src_pos.notna()]
@@ -305,8 +292,8 @@ def map_rows(rows, sp, gene2acc, ex):
             if o is not None:
                 accepted.append(o)
                 new.append(shift(li, o, wt, acc))
-        # isoforms with too few rows to fit an offset: reuse an offset accepted for this gene on another isoform,
-        # only when every row's residue matches under it
+        # isoforms with too few variants to fit an offset: reuse an offset accepted for this gene on another
+        # isoform, only when every variant's residue matches under it
         for li in small:
             for o in dict.fromkeys(accepted):
                 s = shift(li, o, wt, acc)
@@ -348,53 +335,46 @@ def main():
                     default=Path("/no_backup/diasfrazer/egalpern_pgb_clinical/layers/am_hg38_snv_index.parquet"))
     ap.add_argument("--am-hg19", type=Path,
                     default=Path("/no_backup/diasfrazer/db/alphamissense/raw/AlphaMissense_hg19.tsv.gz"),
-                    help="AlphaMissense hg19 table, to map the GRCh37 DNM coordinates")
+                    help="AlphaMissense hg19 table, to map the GRCh37 de novo coordinates")
     ap.add_argument("--msa-dirs", type=Path, nargs="*", default=[],
                     help="folders of <UNIPROT>.a3m to reuse (searched in order)")
-    ap.add_argument("--genes-out", type=Path, default=Path("datasets/clinical/cards"))
+    ap.add_argument("--genes-out", type=Path, default=Path("datasets/clinical"))
     a = ap.parse_args()
     a.out.mkdir(parents=True, exist_ok=True)
-    a.genes_out.mkdir(parents=True, exist_ok=True)
 
     cv, dn, g = load_sources(a.curation)
-    cards, rand = select(a.curation, cv, dn, g)
+    bench, rand = select(a.curation, cv, dn, g)
 
-    # map each source once (on the union of the rows its cards use), then subset per card
+    # map all variants together (one protein per gene), then split per benchmark
     sp, gene2acc = read_sprot(a.sprot)
-    keys = {"clinvar": ["gene", "hgvsp"], "dnm": ["variant_id", "gene", "mutant_source"],
-            "gnomad": ["variant_id", "gene", "enst"]}
-    src_rows = {}
-    for n, d in cards.items():
-        s = CARDS[n][0]
-        src_rows[s] = pd.concat([src_rows.get(s, d.iloc[:0]), d]).drop_duplicates(keys[s])
     hits = []
-    for s, d in src_rows.items():
-        d["key"] = s + ":" + d[keys[s]].astype(str).agg("|".join, axis=1)
+    for n, d in bench.items():
+        s = BENCHMARKS[n][0]
+        d["key"] = s + ":" + d[KEYS[s]].astype(str).agg("|".join, axis=1)
         e = d[["key", "variant_id"]].dropna().assign(variant_id=lambda x: x.variant_id.str.split(";")).explode(
             "variant_id")
-        look = snv_lookup_hg19(a.am_hg19, set(e.variant_id)) if s == "dnm" else snv_lookup(a.snv_index,
-                                                                                             set(e.variant_id))
+        look = (snv_lookup_hg19(a.am_hg19, set(e.variant_id)) if s == "dnm" else
+                snv_lookup(a.snv_index, set(e.variant_id)))
         hits.append(e.merge(look, on="variant_id")[["key", "uniprot_id", "protein_variant"]])
-        print(f"{s}: {e.variant_id.nunique():,} SNVs ({'GRCh37' if s == 'dnm' else 'GRCh38'}) -> "
+        print(f"{n}: {e.variant_id.nunique():,} SNVs ({'GRCh37' if s == 'dnm' else 'GRCh38'}) -> "
               f"{len(look):,} (SNV, protein) hits", flush=True)
-    # one protein per gene across all sources: map the pooled rows of every source together
     iso_col = {"clinvar": "source_transcript", "dnm": "source_protein", "gnomad": "enst"}
-    pooled = pd.concat([d[["key", "gene", "mutant_source"]].assign(src_iso=s + ":" + d[iso_col[s]].astype(str))
-                        for s, d in src_rows.items()], ignore_index=True)
+    pooled = pd.concat([d[["key", "gene", "mutant_source"]].assign(
+        src_iso=BENCHMARKS[n][0] + ":" + d[iso_col[BENCHMARKS[n][0]]].astype(str)) for n, d in bench.items()],
+        ignore_index=True)
     prots, mapped, um = map_rows(pooled, sp, gene2acc, pd.concat(hits, ignore_index=True))
     mp = mapped.set_index("key")[["uniprot_id", "mutant", "mapping"]]
-    print(f"mapped {len(mapped):,} of {len(pooled):,} source rows; {len(um):,} unmapped; "
+    print(f"mapped {len(mapped):,} of {len(pooled):,} variants; {len(um):,} unmapped; "
           f"{mapped.mapping.value_counts().to_dict()}", flush=True)
 
-    finalise_random(cards, rand, keys, mp, prots, a.genes_out)
-    sel = pd.DataFrame([counts(n, d) for n, d in cards.items()])
+    finalise_random(bench, rand, mp, prots, a.genes_out)
+    sel = pd.DataFrame([counts(n, d) for n, d in bench.items()])
     sel.to_csv(a.out / "selection_counts.tsv", sep="\t", index=False)
     print(sel.to_string(index=False), flush=True)
 
-    for n, d in cards.items():
-        s, y = CARDS[n]
+    for n, d in bench.items():
+        s, y = BENCHMARKS[n]
         d = d.copy()
-        d["key"] = s + ":" + d[keys[s]].astype(str).agg("|".join, axis=1)
         d["complete"] = d[MODELS].notna().all(axis=1)
         m = d.join(mp, on="key", how="inner")
         if s == "dnm":  # GRCh37 source coordinates: keep them, and recover the GRCh38 SNV of the mapped change
@@ -406,12 +386,12 @@ def main():
         out.to_csv(a.out / n / "variants.tsv.gz", sep="\t", index=False)
         u = d[~d.key.isin(mp.index)]
         u.drop(columns=["key"]).to_csv(a.out / n / "unmapped_rows.tsv", sep="\t", index=False)
-        print(f"{n:28s} {out.gene.nunique():4d} genes  {len(out):8,} rows mapped  {len(u):5,} unmapped "
+        print(f"{n:8s} {out.gene.nunique():4d} genes  {len(out):8,} variants mapped  {len(u):5,} unmapped "
               f"({len(u) / len(d):.2%})", flush=True)
 
     # proteins: reusable MSAs and the query FASTA for the rest
     used = set().union(*[set(pd.read_csv(a.out / n / "variants.tsv.gz", sep="\t", usecols=["uniprot_id"]).uniprot_id)
-                         for n in cards])
+                         for n in bench])
     prots = prots[prots.uniprot_id.isin(used)].copy()
     reuse = []
     for u in prots.uniprot_id:
@@ -425,8 +405,7 @@ def main():
         for u in q.uniprot_id:
             f.write(f">{u}\n{sp[u]['sequence']}\n")
     print(f"{prots.uniprot_id.nunique()} proteins ({prots.gene.nunique()} genes); MSA reused for "
-          f"{(prots.msa_reused != '').sum()}; queries.fasta: {len(q)} proteins, {q.length.sum():,} residues, "
-          f"longest {q.nlargest(5, 'length')[['gene', 'length']].values.tolist()}")
+          f"{(prots.msa_reused != '').sum()}; queries.fasta: {len(q)} proteins")
 
 
 if __name__ == "__main__":
