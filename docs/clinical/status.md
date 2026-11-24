@@ -1,5 +1,29 @@
 # Clinical benchmark: status
 
+## Current state (2026-11-24)
+
+The four benchmarks (`clinvar`, `denovo`, `gnomad`, `genebass`) are built by one set of scripts and described in
+[benchmarks.md](benchmarks.md). Changes on 2026-11-24 (branch `clinical/cards-data`, which merges
+`clinical/genebass-data`):
+
+- **Random genes:** `denovo` and `gnomad` draw 300 genes once from the eligible genes (protein up to 2,700 aa with
+  placed variants). The earlier draw-then-replace scheme and the `genes.tsv` files are gone.
+- **One build for all four:** `scripts/clinical/run.sh` (`prepare`, `msa`, `build`, `check`). Genebass goes through
+  the same builder and has one index, `genebass.csv` (100 pairs, 63 proteins up to 2,700 aa).
+- **Archives hold benchmark data only, in the DMS layout.** No score or mask layers. The MSA is the unfiltered
+  ColabFold search output with its original headers; models filter it themselves.
+- **One placement rule:** variants go onto UniProt through their SNV (AlphaMissense SNV table). The offset fallback
+  is gone. Genebass still uses the VESM paper's mapping first.
+- **No SLURM files in the repo.** The steps are plain commands; submit them as you like.
+
+Removed from the repo, still on branch `clinical/genebass-data`: the score layers (`scripts/clinical/layers/`),
+the alignment filter and header restore (`scripts/clinical/msa/filter_msas.py`, `msa_filter.py`,
+`restore_msa_headers.py`), the Fig. 6b reproduction check (`check_genebass.py`) and the `.sbatch` wrappers.
+
+The rest of this page is the report as of 2026-11-19 and describes the earlier build.
+
+## Earlier report (2026-11-19)
+
 Snapshot: 2026-11-16.
 
 ## Repository
@@ -33,32 +57,40 @@ models, structure-model runs, correlation variants and the Spearman/per-gene ana
   recovered: portal top pLoF list on the paper's 27 phenotypes.
 - [x] **MSAs, PG2 protocol** (ColabFold on UniRef100 2026_01, no post-alignment filtering) for the 61 paper
   proteins: 4 h 24 min on 64 CPUs, 38 GB.
-- [x] **Annotation layers** for any archive: AlphaMissense, popEVE and CADD (dbNSFP 5.3.1a); pLDDT, full length and
+- [x] **Annotation layers** for any archive: AlphaMissense (its hg38 table), popEVE (v1.1 release zip) and CADD (dbNSFP 5.3.1a); pLDDT, full length and
   UniProt positions. Validated against the paper, AlphaMissense's own tables and raw AFDB files.
-- [x] **ClinVar, de novo and gnomAD benchmarks** (branch `clinical/cards-data`, 2026-11-23): one PG2 archive per
-  gene; ClinVar 158 genes, de novo and gnomAD 300 random genes each; all with structures and MSAs, no model
-  scores; CHECK OK. See [clinvar_denovo_gnomad.md](clinvar_denovo_gnomad.md).
+- [x] **Final benchmark set (2026-11-19):** proteins <= 2,700 aa (100 pairs, 63 proteins, 6,066 rows), archives
+  with the EVE-protocol filtered alignment (model side's `msa_filter.py`, vendored verbatim): `$WORK/genebass/final_le2700/`
+  (868 MB), index `datasets/clinical/genebass/genebass_le2700.csv`, filter table `genebass_le2700_msa_filter.tsv`.
+  Built by `scripts/clinical/msa/filter_msas.py` (job 32028266), checked by `check_final.py` (job 32028275,
+  `CHECK FINAL OK`). See [genebass.md](genebass.md#final-dataset--2700-aa-filtered-alignments).
 - [x] **Reports:** [genebass.md](genebass.md), [long_proteins.md](long_proteins.md), this file. The project overview is in
   [project.md](project.md).
 
 ## Running
 
-| Job | ID | What | Expected |
-|---|---|---|---|
-| `gb_rebuild` | 31919891 (genoa64, 8 CPU, 200 GB, ≤4 h) | Rebuild with all 66 MSAs and the `in_vesm_paper` flags (index column + assay non-target), layers → `$WORK/genebass/splits_layers/`; runs the all-rows check (MISMATCH expected) and the `--paper-set` check (must print REPRODUCED) | ~2 h (last rebuild 1 h 45 min, 147 GB peak). The log ends `REBUILD OK`. |
+Nothing on the data side (final set built 2026-11-19, see Done). Model work (long proteins) is on branch `clinical/model-api`, documented in
+`docs/clinical/models_long_proteins.md` there.
 
-Earlier jobs, all finished: rebuild 31809884 and 31810199 (`REBUILD OK`), MSAs for the 5 new proteins 31810198
-(`SEARCH OK`, 66 `.a3m`).
+Finished 2026-11-16:
+- Rebuild 31919891 with all 66 MSAs and the `in_vesm_paper` flags: `paper set (in_vesm_paper): 103 of 109 archives,
+  6,977 rows (paper: 103 pairs, 6,977 rows)`, all-rows check MISMATCH (expected), `--paper-set` check **REPRODUCED**,
+  `REBUILD OK` (2 h 06 min).
+- Layers with the new sources (branch `clinical/layers-sources`, merged here): job 31922391 on the final archives,
+  `LAYERS OK` (42 min). AlphaMissense 100% of rows, popEVE 73.6%, CADD 99.9% (see
+  [layers_sources_progress.md](layers_sources_progress.md)).
+- `$WORK/genebass/splits/` (63 GB, uncompressed archives without layers) deleted after the checks, as agreed.
+  The final archives are `$WORK/genebass/splits_layers/`; to rebuild them, rerun `scripts/clinical/msa/rebuild.sbatch`.
+
+Earlier jobs: rebuild 31809884 and 31810199, MSAs for the 5 new proteins 31810198 (`SEARCH OK`, 66 `.a3m`).
 
 ## Pending
 
-1. **After 31919891:** check `REPRODUCED` in the log, commit the updated
-   `datasets/clinical/genebass/genebass_fig6b.csv` (new columns `in_vesm_paper`, `n_variants_vesm_paper`), push,
-   then delete `$WORK/genebass/splits/` (63 GB, uncompressed duplicate of `splits_layers/`; agreed 2026-11-16).
+1. **Hosting:** files stay local on the cluster for now (user, 2026-11-16). Licence handling for the score layer
+   (AlphaMissense CC BY-NC-SA 4.0, CADD non-commercial) before any public release.
 2. **Clinical evaluation stage in the repo:** per-pair Pearson and −log10 P, overall and per group, plus Spearman
    and per-gene variants; headline on all archives and rows, with a switch for the paper's set (`in_vesm_paper`).
    It needs model predictions, which in turn need the model API for long proteins.
-3. **Hosting** of the archives (Hugging Face vs cluster only) and licence handling for the score layer: not decided.
 4. **Later tasks:** ClinVar (needs proteome scale), BRaVa (feasibility analysed; variant-level files not downloaded
    yet), de novo variants.
 5. **proteingym-base issue to report:** archive structures lose pLDDT (B-factors set to 0).
@@ -75,8 +107,12 @@ Earlier jobs, all finished: rebuild 31809884 and 31810199 (`REBUILD OK`), MSAs f
 | Association data from Genebass itself, not the paper's extraction; the paper's tables only for groups and comparison | User, 2026-11-09 |
 | Headline metric on all 109 pairs and all rows; the paper's exact set recoverable from `in_vesm_paper` flags on pairs (index) and rows (assay) | User, 2026-11-16 |
 | Rows that can't be mapped to a UniProt wild type are dropped and listed | Ours (an archive needs a wild-type position) |
-| MSA: ColabFold on UniRef100 Jan 2026, no post-alignment filtering; ignore PG2's jackhmmer MSA | User, 2026-11-09 |
+| MSA: ColabFold on UniRef100 Jan 2026; ignore PG2's jackhmmer MSA | User, 2026-11-09 |
+| Final set capped at 2,700 aa (one full-length AFDB structure per protein; APOB, LRP2, PKD1 dropped) | User, 2026-11-19 |
+| Final archives store the EVE-protocol filtered alignment (same code as the models' filter, vendored verbatim), not the full ColabFold search | User, 2026-11-19 (replaces "no post-alignment filtering" for the final set) |
+| Index `archive` column points at the layered archives (`splits_layers/`); the final index at `final_le2700/` | Ours, 2026-11-19 (bug fix) |
 | ColabFold recipe adapted to UniRef100: no cluster expansion, no environmental DB, `--max-seqs 1e6` | Ours (inferred from PG2 depths), to confirm with the PG2 builders |
+| Archives keep the ColabFold a3m headers (bit scores for the EVE-protocol filter); `restore_msa_headers.py` after the layer step | User, 2026-11-17 |
 | Structures: AFDB v6, AFDB fragments for proteins > 2,700 aa; no AF2 re-folding | User, 2026-11-16 (replaces "PG2 protocol, AF2") |
 | PrimateAI-3D: not for now | User, 2026-11-16 |
 | Push `clinical/genebass-data` to the fork | User, 2026-11-16 |
@@ -93,6 +129,11 @@ Everything below runs on the CRG cluster as sbatch jobs on genoa64; don't comput
 Python: `/users/diasfrazer/egalpern/project/proteingym_clinical/env/bin/python` (proteingym-base and its
 dependencies). `WORK=/no_backup/diasfrazer/egalpern_pgb_clinical`. Job IDs are appended to `$WORK/logs/jobs.txt`.
 
+0. **Final set (current):** `$WORK/genebass/final_le2700/` + `datasets/clinical/genebass/genebass_le2700.csv`. To
+   rebuild it from `splits_layers/` alone: `sbatch scripts/clinical/msa/filter_msas.sbatch` (1.5 min), then the
+   `check_final.py` command in [genebass.md](genebass.md#final-dataset--2700-aa-filtered-alignments) (must print
+   `CHECK FINAL OK`). A full rebuild (`rebuild.sbatch`) now ends with these two steps. The steps below are the history
+   of the full 109-pair build.
 1. **Check the rebuild (job 31919891).**
    - `squeue -u $USER`, then `grep -E "MISMATCH|REPRODUCED|REBUILD OK|paper set" $WORK/logs/rebuild_31919891.log`.
    - Success: 109 archives in `$WORK/genebass/splits/` and `splits_layers/`, the line `paper set (in_vesm_paper):

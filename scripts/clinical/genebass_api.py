@@ -1,7 +1,7 @@
 """Genebass benchmark tables straight from Genebass (public API behind app.genebass.org), same rules as VESM Fig. 6.
 
 Replaces the VESM authors' extraction (figshare Fig6_data) as the source of association data. Writes tables in the
-same schema as the paper's, so build_genebass.py can use them (--hits / --betas):
+same schema as the paper's, which prepare.py reads:
 
   pairs   the Genebass portal's top pLoF gene-phenotype associations (pairs where any gene-level test, SKAT-O, SKAT or
           burden, has P < 1e-6) for the VESM paper's 27 blood-biochemistry phenotypes (the 31 "Blood biochemistry"

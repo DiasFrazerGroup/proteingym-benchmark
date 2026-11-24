@@ -46,7 +46,6 @@ Shared constraints, in evedesign and proteingym-base:
 - **proteingym-base zeroes the B-factor column when it builds an archive.** AlphaFold pLDDT is therefore lost inside
   every archive, PG2's own included. Any model or analysis that reads pLDDT from archive structures sees 0.00.
   - Found on 2026-11-09.
-  - Our annotation layers take pLDDT from the original AFDB files instead (`scripts/clinical/layers`).
 
 ## 3. What has been implemented and tested (Genebass, 2026-11-06)
 

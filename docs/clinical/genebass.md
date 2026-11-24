@@ -61,115 +61,31 @@ From `compare_vs_paper.md`:
 
 ## Mapping variants to proteins
 
-Each variant must sit on a UniProt wild type. Rules, in order:
+Each variant must sit on a Swiss-Prot wild type:
 
-1. **The paper's mapping table**, where it covers the variant: UniProt ID, position and sequence. The wild-type
-   residue is checked.
-2. **The variant's own GRCh38 SNV**, looked up in the AlphaMissense hg38 table (canonical isoforms), with the
-   wild-type residue checked against the sequence.
-3. **A constant Ensembl-to-UniProt offset**, only when at least 10 rows of the gene all match under it.
-4. **Otherwise the row is dropped** and listed in `build/unmapped_rows.tsv`.
+1. **The paper's mapping table**, where it covers the variant, with the wild-type residue checked.
+2. **Otherwise the variant's own GRCh38 SNV**, looked up in the AlphaMissense hg38 table, on the gene's protein.
+3. **Otherwise the row is dropped.**
 
-In the current build:
-
-- 109 of the 111 pairs survive. The SLCO1B3-SLCO1B7 readthrough gene has no canonical Swiss-Prot entry, so its 2
-  pairs (110 rows) are dropped.
-- 23 more rows across 12 genes can't be placed and are dropped.
-- The column `mapping` (`paper_uniprot`, `am_snv_index`, `swissprot_offset±k`) records the route per row.
-
-Result: **109 archives, 66 proteins, 7,791 variant rows.** By group: Lipid 39, Liver 38, Renal 15, Other 17.
+The SLCO1B3-SLCO1B7 readthrough gene has no Swiss-Prot entry of its own, so its 2 pairs are dropped. LPA isn't in
+the AlphaMissense hg38 table, so it keeps only the paper's 60 rows.
 
 ## Data files
 
-### Archive layout
+**100 archives (pairs), 63 proteins, 5,995 variant rows.** By group: Lipid 34, Liver 38, Renal 11, Other 17.
 
-One archive per gene–phenotype pair, as PG2 does one per (protein, condition):
-`<ENTRY>_GENEBASS_2022_<PHENOTYPE>.splits.pgdata`, e.g. `APOB_HUMAN_GENEBASS_2022_LDL_DIRECT`.
+- **Proteins up to 2,700 aa only.** This drops APOB, LRP2 and PKD1 (9 pairs). Every remaining protein has one
+  full-length AlphaFold DB model.
+- **Paper set:** 94 pairs and 5,252 rows are the VESM paper's own. They are flagged by the assay variable
+  `pair_in_vesm_paper` and the assay column `in_vesm_paper`.
+- **Layout:** the same as the other clinical benchmarks, see [benchmarks.md](benchmarks.md). The archives have no
+  score layers, and the MSA is the unfiltered ColabFold search output with its headers.
+- **Index:** [`genebass.csv`](../../datasets/clinical/genebass/genebass.csv), one row per archive.
+- **Duplicate protein changes:** a few protein changes occur twice within a pair (different SNVs, different betas).
+  Both rows are kept. `Dataset.to_df()` would average them, so the evaluation should read the assay rows.
 
-```
-<name>.splits.pgdata = zip(dataset.pgdata, slices.json)       # trivial 2-fold split; zero-shot ignores it
-dataset.pgdata       = zip(manifest.lock, assays/<name>.csv, sequences/<UNIPROT>.fasta,
-                           structures/AF-<UNIPROT>-F<k>-model_v6.pdb [all AFDB fragments if > 2,700 aa],
-                           msas/<UNIPROT>_colabfold_uniref100.a3m)
-```
+Build: `BENCHMARKS=genebass bash scripts/clinical/run.sh prepare`, then `build` and `check`
+([scripts/clinical/README.md](../../scripts/clinical/README.md)).
 
-### Assay CSV
-
-One row per (variant, protein change). Rows are not merged: 7 protein changes appear twice in a pair (different
-codons), as in the paper.
-
-| Column | Kind | Content |
-|---|---|---|
-| `sequence` | input | full-length mutated sequence |
-| `beta` | **target** | Genebass single-variant effect (SAIGE; SD of the inverse-rank-normalised trait); its sign is the direction on the trait |
-| `mutant` | id | e.g. `P4T`, UniProt numbering |
-| `pval`, `allele_count`, `allele_number`, `allele_frequency` | association | Genebass single-variant P; cohort allele counts |
-| `variant_id`, `hgvsp` | id | GRCh38 `chr-pos-ref-alt`; Ensembl protein HGVS |
-| `mapping` | provenance | how the variant was placed on UniProt |
-| `in_vesm_paper` | subset flag | row is in the paper's exact Fig. 6b set (same pair and SNV); `False` for rows only Genebass has |
-| `uniprot_pos` | layer | UniProt position(s) |
-| `mask_plddt`, `mask_plddt_source`, `mask_protein_length` | mask layer | pLDDT of the site (AFDB v6, see below); full canonical length |
-| `score_alphamissense`, `score_popeve`, `score_cadd_phred`, `score_snv_source` | score layer | from dbNSFP 5.3.1a for the row's SNV; PrimateAI-3D once the licensed file is available |
-
-### Manifest and inputs
-
-- **Assay variables:** `phenotype_code` (UK Biobank field) and `biomarker_group`.
-- **Wild type:** the paper's UniProt sequence, or Swiss-Prot 2026_03 for proteins the paper does not map. The APOB
-  wild type differs from Swiss-Prot at Y1422C.
-- **Structures:** AlphaFold DB v6, each with its residue span; proteins over 2,700 aa (APOB, LRP2, PKD1) come as
-  their AFDB fragments F1..Fn. Decided 2026-11-16: keep AFDB v6 with fragments, no AF2 re-folding.
-- **MSA:** the PG2 protocol, ColabFold on UniRef100 2026_01 with no post-alignment filtering. This is the
-  `colabfold_search` monomer search with filtering off. Because UniRef100 is not clustered there is no cluster
-  expansion, no environmental database, and the hit limit is raised to 1M. Depths reach 1.16M sequences.
-
-### Index file
-
-`genebass_fig6b.csv` has one row per archive: pair, gene, UniProt ID, phenotype, group, Genebass gene-level results
-(missense and pLoF SKAT-O P, burden betas), counts, structures and MSA depth. `in_vesm_paper` marks the paper's
-103 pairs and `n_variants_vesm_paper` counts their paper rows.
-
-### Headline set and the paper's exact set
-
-Decided 2026-11-16: the **headline metric uses every archive and every row** (109 pairs, Genebass-sourced). The
-paper's Fig. 6b set is recovered from the data alone, without the paper's files: archives with `in_vesm_paper`
-in the index, and within them the rows with `in_vesm_paper`. `check_genebass.py --paper-set` does exactly that and
-must print `REPRODUCED`; the evaluation stage should offer the same switch.
-
-### Caveats
-
-- **pLDDT:** proteingym-base sets structure B-factors to 0 inside archives, so pLDDT is read from the original AFDB
-  files.
-- **Licences:** popEVE is CC BY 4.0. AlphaMissense is CC BY-NC-SA 4.0. CADD and dbNSFP are for non-commercial use.
-  PrimateAI-3D cannot be redistributed. The score columns therefore need a licence decision before any public
-  release.
-
-## Files and locations
-
-| What | Where |
-|---|---|
-| Genebass tables + comparison | `$WORK/genebass_api/{genebass_api_hits.csv, genebass_api_betas.csv.gz, compare_vs_paper.md}` |
-| Archives, no MSA (Genebass source) | `$WORK/genebass_api/build/splits/`, with layers in `splits_layers/` |
-| **Final archives** (Genebass source, MSAs, layers, `in_vesm_paper` flags) | `$WORK/genebass/splits_layers/` (compressed, 6.6 GB), from rebuild job 31919891 |
-| Same archives without layers, uncompressed | `$WORK/genebass/splits/` (63 GB; delete once the paper-set check passes) |
-| MSAs (66 proteins, 40 GB) | `$WORK/genebass_msas/` |
-| Earlier paper-sourced archives (superseded) | `datasets/clinical/genebass/splits/` (repo, git-ignored), `$WORK/genebass_nomsa_layers/` |
-
-`WORK=/no_backup/diasfrazer/egalpern_pgb_clinical`.
-
-Code, all in `scripts/clinical/`:
-
-- `genebass_api.py`: Genebass tables and comparison.
-- `build_genebass.py`: archives.
-- `check_genebass.py`: Fig. 6b reproduction.
-- `msa/`: MSA chain.
-- `layers/`: score and mask layers.
-
-The `.sbatch` wrappers run each step on genoa64.
-
-## Open
-
-- **PrimateAI-3D:** not for now (decided 2026-11-16); would need the licensed file from Illumina.
-- **Hosting and licences** of the archives and score layers (see Caveats).
-
-Done since: MSAs for the 5 new proteins (CST3, GPLD1, GPT, SHBG, SLC22A12; job 31810198); headline set and
-`in_vesm_paper` flags; structures kept as AFDB v6 with fragments.
+The earlier build (109 pairs, score layers, filtered alignments, the Fig. 6b reproduction check) is on branch
+`clinical/genebass-data`.
