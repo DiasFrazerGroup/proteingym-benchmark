@@ -14,5 +14,5 @@ export SNV_INDEX=${SNV_INDEX:-$WORK/snv_index}                          # am_hg3
 # MSAs: one <UNIPROT>.a3m per protein
 export MSAS=${MSAS:-$WORK/msas}
 export MMSEQS=${MMSEQS:-mmseqs}                                         # MMseqs2 >= 18
-export UNIREF100=${UNIREF100:-/no_backup/diasfrazer/egalpern_uniref100_2026_01_mmseqs/uniref100}  # MMseqs2 DB, UniRef100 2026_01
-export GPU=${GPU:-0}                                                    # 1: GPU search (UNIREF100 = padded DB)
+export UNIREF100=${UNIREF100:-$WORK/uniref100_2026_04/uniref100}   # MMseqs2 DB, UniRef100 2026_04 (see msa.sh)
+export GPU=${GPU:-0}                                                    # 1: GPU search (database made with --gpu 1)

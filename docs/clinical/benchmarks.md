@@ -53,7 +53,7 @@ fragments.
 | `assays/<DATASET>.csv` | `sequence` (full-length mutated sequence), the target, `mutant` (UniProt numbering, e.g. `R44W`), then the source's columns |
 | `sequences/<DATASET>.fasta` | wild type: Swiss-Prot 2026_03 canonical sequence |
 | `structures/<DATASET>.pdb` | AlphaFold DB v6 model (ClinVar proteins over 2,700 aa: `<DATASET>_F<k>.pdb` fragments, with their residue span in the manifest) |
-| `msas/<DATASET>_colabfold.a3m` | ColabFold search on UniRef100 2026_01, no post-alignment filtering. The file is the search output byte for byte, so the hit headers (bit scores) are there |
+| `msas/<DATASET>_colabfold.a3m` | ColabFold search on UniRef100 2026_04, no post-alignment filtering. The file is the search output byte for byte, so the hit headers (bit scores) are there |
 | split | trivial 2-fold (zero-shot models ignore it) |
 
 Source columns in the assay:

@@ -6,7 +6,7 @@ Every archive <DATASET>.splits.pgdata is laid out like the DMS archives:
   sequences/<DATASET>.fasta        wild type: Swiss-Prot 2026_03 canonical sequence
   structures/<DATASET>.pdb         AlphaFold DB v6 model (proteins > 2,700 aa: fragments <DATASET>_F<k>.pdb, with
                                    their residue span in the manifest)
-  msas/<DATASET>_colabfold.a3m     ColabFold search on UniRef100 2026_01, no post-alignment filtering (msa.sh);
+  msas/<DATASET>_colabfold.a3m     ColabFold search on UniRef100 2026_04, no post-alignment filtering (msa.sh);
                                    the search output byte for byte, so the hit headers (bit scores) are kept
   split                            trivial 2-fold (zero-shot models ignore it)
 Also writes the index CSV, one row per archive.
@@ -31,7 +31,7 @@ from common import a3m_depth, afdb_models, mutate, read_sprot
 
 DoiField.resolve = lambda self, doi: {}  # publications are given in full below: no DOI lookup, the build is offline
 
-MSA_DESC = ("MSA generated with ColabFold (MMseqs2) on UniRef100 (UniProt 2026_01) with all post-alignment "
+MSA_DESC = ("MSA generated with ColabFold (MMseqs2) on UniRef100 (UniProt 2026_04) with all post-alignment "
             "filtering disabled.")
 SPEC = {  # target, its description [, unit]; dataset description; per-dataset variables; publication
     "clinvar": dict(

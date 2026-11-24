@@ -32,13 +32,13 @@ The steps are plain commands. On a cluster, submit them however you like, for ex
 - **SNV index:** `bash scripts/clinical/run.sh index` runs [build_snv_index.py](build_snv_index.py) on the
   AlphaMissense hg38 and hg19 tables (10 minutes, 40 GB of memory).
 - **Genebass tables:** [genebass_api.py](genebass_api.py) downloads them from Genebass.
-- **UniRef100 database:** `mmseqs createdb uniref100.fasta uniref100` (UniProt 2026_01). For the GPU search,
-  also `mmseqs makepaddedseqdb uniref100 uniref100_gpu`, and point `UNIREF100` at `uniref100_gpu`.
+- **UniRef100 database:** `mmseqs databases UniRef100 uniref100 tmp --gpu 1` (downloads the current release; the
+  archives use 2026_04). `--gpu 1` writes the GPU-ready format; drop it for a CPU search.
 
 ## MSA search on a GPU
 
 `GPU=1 bash scripts/clinical/msa.sh queries.fasta out_dir` uses MMseqs2's GPU prefilter. It needs MMseqs2 18
-built with CUDA and the padded database. MMseqs2 spreads the database over the GPUs in `CUDA_VISIBLE_DEVICES`.
+built with CUDA and the GPU-ready database. MMseqs2 spreads the database over the GPUs in `CUDA_VISIBLE_DEVICES`.
 The GPU prefilter always runs at full sensitivity, so `-s` isn't passed.
 
 To split the work, cut `queries.fasta` into chunks and run `msa.sh` on each; every chunk writes its own
