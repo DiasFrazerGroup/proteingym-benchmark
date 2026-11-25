@@ -41,5 +41,13 @@ The steps are plain commands. On a cluster, submit them however you like, for ex
 built with CUDA and the GPU-ready database. MMseqs2 spreads the database over the GPUs in `CUDA_VISIBLE_DEVICES`.
 The GPU prefilter always runs at full sensitivity, so `-s` isn't passed.
 
+After the GPU prefilter, the alignment of one protein runs on one CPU thread, and its time grows with the square of
+the protein length: about 8 minutes per pass at 1,000 aa, four passes. Two things keep it fast:
+
+- **Put the database on local disk.** The alignment reads target sequences at random, which is slow from a
+  parallel filesystem.
+- **Use many proteins per run and send long proteins to the CPU search.** The archives used the GPU up to
+  1,250 aa and the CPU search (`GPU=0`, `SPLIT_MEMORY=300G`) above.
+
 To split the work, cut `queries.fasta` into chunks and run `msa.sh` on each; every chunk writes its own
 `<UNIPROT>.a3m` files.

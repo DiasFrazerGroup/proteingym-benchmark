@@ -1,6 +1,6 @@
 # Clinical benchmark: status
 
-## Current state (2026-11-24)
+## Current state (2026-11-25)
 
 The four benchmarks (`clinvar`, `denovo`, `gnomad`, `genebass`) are built by one set of scripts and described in
 [benchmarks.md](benchmarks.md). Changes on 2026-11-24 (branch `clinical/cards-data`, which merges
@@ -14,6 +14,8 @@ The four benchmarks (`clinvar`, `denovo`, `gnomad`, `genebass`) are built by one
   ColabFold search output with its original headers; models filter it themselves.
 - **One placement rule:** variants go onto UniProt through their SNV (AlphaMissense SNV table). The offset fallback
   is gone. Genebass still uses the VESM paper's mapping first.
+- **MSAs redone on UniRef100 2026_04** for all 809 proteins (GPU prefilter up to 1,250 aa on MareNostrum 5, CPU
+  prefilter above at CRG). All 858 archives are built and checked.
 - **No SLURM files in the repo.** The steps are plain commands; submit them as you like.
 
 Removed from the repo, still on branch `clinical/genebass-data`: the score layers (`scripts/clinical/layers/`),

@@ -1,6 +1,6 @@
 # Clinical benchmarks
 
-Status: 2026-11-24.
+Status: 2026-11-25. All 858 archives are built and pass `check.py`.
 
 Four clinical variant-effect benchmarks in the PG2 format. Each is a set of `.splits.pgdata` archives laid out like
 the DMS archives, with benchmark data only: no model scores.
@@ -69,6 +69,59 @@ Genebass archives also carry the pair's `phenotype`, `phenotype_code`, `biomarke
 `genebass_analysis_id`, `skato_pval_missense` and `pair_in_vesm_paper` as assay variables.
 
 Alignments are not filtered in the archives: models that need a filtered alignment filter it themselves.
+
+## MSAs
+
+One MSA per protein (809 proteins), searched on UniRef100 2026_04 (227 million sequences) with
+[scripts/clinical/msa.sh](../../scripts/clinical/msa.sh): the ColabFold monomer search with no post-alignment
+filtering. The two prefilters of MMseqs2 were used, by protein length:
+
+| Proteins | Prefilter | Where |
+|---|---|---|
+| up to 1,250 aa (653) | GPU, ungapped (`GPU=1`); at most 524,288 candidates per protein | MareNostrum 5, 4 × H100 per node |
+| over 1,250 aa (156) | CPU, k-mer (`-s 8`); at most 1,000,000 candidates | CRG cluster |
+
+The steps after the prefilter are the same. The split is practical: after the GPU prefilter, the alignment of one
+protein runs on one CPU thread and its time grows with the square of the protein length (about 8 minutes per pass
+at 1,000 aa, four passes), which didn't fit the 2-hour jobs available on MareNostrum 5.
+
+MSA depth, median (minimum) sequences: ClinVar 179,394 (1,764); de novo 99,294 (286); gnomAD 71,501 (114);
+Genebass 187,656 (3,042). 17 proteins have fewer than 1,000 sequences (2 in de novo, 15 in gnomAD). Each archive's
+depth is in the index column `msa_n_sequences`.
+
+## Reference results
+
+Six published predictors (clinical-curation's scores, not stored in the archives), on the variants all six score.
+Pooled over all variants = headline; the mean per gene is in brackets.
+
+| Model | ClinVar AUROC | De novo AUROC | gnomAD ρ (lower = better) |
+|---|---|---|---|
+| AlphaMissense | 0.963 (0.972) | 0.755 (0.671) | −0.128 (−0.134) |
+| VESM-3B | **0.964** (0.963) | 0.719 (0.697) | −0.075 (−0.089) |
+| ESM1b | 0.945 (0.944) | 0.718 (0.661) | −0.064 (−0.074) |
+| CADD v1.7 | 0.909 (0.936) | 0.691 (0.582) | −0.051 (−0.049) |
+| GPN-MSA | 0.889 (0.926) | 0.742 (0.646) | **−0.166** (−0.176) |
+| popEVE | 0.886 (0.957) | **0.760** (0.681) | −0.099 (−0.083) |
+| *gene-only baseline* | | ***0.854*** | |
+
+- **ClinVar:** 9,697 variants in 122 genes scored by all six.
+- **De novo:** 768 variants in 289 genes; the per-gene mean covers the 41 genes with both classes. **Gene identity
+  alone beats every model:** every case in the `ap_test_set` is in a known developmental-disorder gene, while
+  controls are in any gene. The baseline (does the gene have another case variant) must be reported next to every
+  model.
+- **gnomAD:** 120,225 variants in 287 genes. Allele frequency also tracks how mutable a site is, which is why the
+  DNA model GPN-MSA leads.
+
+Written by `check.py` to `$WORK/reference_results.tsv`. Genebass has no reference scores here.
+
+## Where the archives are
+
+The archives are generated, not committed (31.6 GB):
+
+- CRG: `/no_backup/diasfrazer/cpugh/pgb_clinical/<benchmark>/splits/`
+- MareNostrum 5: `/gpfs/projects/ehpc706/cpugh/pgb_clinical/<benchmark>/splits/`
+
+They load with proteingym-base 0.2.0 (`Subsets.from_path`).
 
 ## Rebuild
 
